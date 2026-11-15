@@ -18,3 +18,10 @@ test('bundled script preserves replacement tokens and cannot terminate the HTML 
  new Function('globalThis',script)(context);
  assert.deepEqual(context.fixture,["$&", "$'", "$`", "</script>"]);
 });
+
+test('bundled original editor exposes every required host adapter function',async()=>{
+ const {readFile}=await import('node:fs/promises');const vm=await import('node:vm');
+ const context=vm.createContext({TextDecoder,TextEncoder});
+ vm.runInContext(await readFile(new URL('../plugins/openpencil/ui/native-engine.js',import.meta.url),'utf8'),context);
+ for(const name of ['init','mount','onEvent','receive','documentName','selection'])assert.equal(typeof context.OpenPencilEngine[name],'function',name);
+});

@@ -7,7 +7,7 @@ const runtime=await resolveRuntime(process.argv[2]);
 const temp=await mkdtemp(join(tmpdir(),'op-codex-build-'));
 try {
  const entry=join(temp,'entry.js');
- await writeFile(entry,`import init,{mount_ck} from ${JSON.stringify(join(runtime.webBundle,'op_host_web.js'))}; globalThis.OpenPencilEngine={init,mount:mount_ck};`);
+ await writeFile(entry,`import init,{mount_ck,codex_on_event,codex_host_message,codex_document_name,codex_selection_json} from ${JSON.stringify(join(runtime.webBundle,'op_host_web.js'))}; globalThis.OpenPencilEngine={init,mount:mount_ck,onEvent:codex_on_event,receive:codex_host_message,documentName:codex_document_name,selection:codex_selection_json};`);
  const output=resolve('plugins/openpencil/ui/native-engine.js');
  const result=spawnSync('bun',['build',entry,'--target=browser','--format=iife','--minify','--outfile',output],{encoding:'utf8'});
  if(result.status!==0)throw Error(result.stderr||result.stdout);

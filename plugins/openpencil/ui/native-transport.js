@@ -1,12 +1,6 @@
 // Transport adapter only. The original Rust editor owns geometry, rendering,
 // interaction, layout, document history and synchronization rules.
 const previewFetch=window.fetch.bind(window);
-const nativeBridge=(()=>{
- let seq=0;const pending=new Map();
- window.addEventListener('message',e=>{if(e.source!==window.parent||e.data?.jsonrpc!=='2.0')return;const p=pending.get(e.data.id);if(p){pending.delete(e.data.id);clearTimeout(p.timer);e.data.error?p.reject(Error(e.data.error.message)):p.resolve(e.data.result);}});
- const request=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq,timer=setTimeout(()=>{pending.delete(id);reject(Error('Codex: время ожидания истекло'));},30000);pending.set(id,{resolve,reject,timer});window.parent.postMessage({jsonrpc:'2.0',id,method,params},'*');});
- return {async init(){if(typeof OP_PREVIEW!=='undefined')return {};const r=await request('ui/initialize',{appInfo:{name:'openpencil',version:'0.4.1'},appCapabilities:{},protocolVersion:'2026-01-26'});window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'},'*');return r;},async call(name,args={}){const r=typeof OP_PREVIEW!=='undefined'?await (await previewFetch(OP_PREVIEW,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,arguments:args})})).json():await request('tools/call',{name,arguments:args});if(r.isError)throw Error(r.content?.[0]?.text||'Ошибка OpenPencil');return r;}};
-})();
 const bytesFromBase64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 async function unpack(s){return new Response(new Blob([bytesFromBase64(s)]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();}
 const originalFetch=window.fetch.bind(window);

@@ -12,6 +12,8 @@ export const CANVAS_URI = NATIVE_URI;
 const schema = properties => ({ type: 'object', properties, additionalProperties: false });
 const filePath = { type: 'string', description: 'Absolute .op path; omit to create or reopen this session’s canvas.' };
 export const canvasTools = [
+  { name: 'canvas_detach_source', description: 'App-only: detach the previous save destination after a successful New/Open/import. Does not write or delete any file.',
+    inputSchema: schema({}), annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
   ...nativeTools,
   { name: 'open_canvas', title: 'OpenPencil Canvas', description: 'Open the editable Rust canvas entrypoint: direct full Rust/CanvasKit editor inside Codex MCP Apps. Optional filePath loads an existing .op into an isolated managed session. All subsequent OpenPencil tools target this canvas until the bridge closes. Omit the path for a new document. Returns the same local panel URL as canvas_open_browser.',
     inputSchema: schema({ filePath }), annotations: { destructiveHint: false, openWorldHint: false },
@@ -81,6 +83,10 @@ export class CanvasController {
     if (name === 'canvas_launch_status') return toolResult(browserLaunchStatus(this, args));
     if (name === 'canvas_launch_ready') return toolResult(browserLaunchStatus(this, args, true));
     if (name === 'canvas_import_image') return toolResult(await importCanvasImage(this.session, args));
+    if (name === 'canvas_detach_source') {
+      this.session.source = null; this.session.baseline = null; this.codegenJob = null;
+      return toolResult({ filePath: null });
+    }
     if (name === 'canvas_save') return toolResult(await this.session.save(args));
     if (name === 'canvas_checkpoint') return toolResult(await this.session.checkpoint());
     if (name === 'canvas_codegen_prepare') return toolResult(await prepareCodegen(this, args));
@@ -115,7 +121,7 @@ export class CanvasController {
       const upstream = this.session ? await this.session.forward(message) : await forward(message, this.options);
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.4.1' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.4.2' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }

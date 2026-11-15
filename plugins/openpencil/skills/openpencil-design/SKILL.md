@@ -118,9 +118,10 @@ completion.
    For phone screens with system chrome, verify exactly one complete set of
    time, cellular signal, Wi-Fi, and battery indicators, with no duplicate bar.
 3. For managed interactive persistence, confirmed document pushes checkpoint
-   the recovery draft. The native 0.4 panel does not yet provide a host Save
-   button with an acknowledged editor flush. Do not assume an immediate save
-   includes unsynchronized keystrokes. `canvas_save` and intercepted `save_document` save the daemon's
+   the recovery draft. The native 0.4.2 Save/Save As commands first await the
+   editor snapshot and selection flush, then acknowledge only the saved revision.
+   Opening/importing another document detaches the previous save destination.
+   Direct `canvas_save` and intercepted `save_document` calls save the daemon's
    current snapshot; verify pending edits have synced before calling them. Save
    As requires a new path; source conflicts stop saves and retain recovery drafts.
    For an existing desktop editor, call `save_document` with the intended absolute

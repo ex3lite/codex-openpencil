@@ -25,7 +25,20 @@ closed, then call `open_canvas` again with the intended recovery file.
 Verified locally: Rust host-owned chat tests, plugin tests, real daemon
 edit/render/save/reopen smoke, and actual Codex resource retrieval. Native
 Codex sandbox rendering is still an acceptance step; do not infer it from
-resource retrieval or the browser preview. The original host-message paths
-for Code-panel replies and acknowledged Save are not yet adapted to the new
-transport. Successful editor document pushes checkpoint the recovery draft;
-manual source-file saving still requires an observed synchronized snapshot.
+resource retrieval or the browser preview.
+
+In 0.4.2, the original Save/Save As commands use the existing snapshot/conflict
+protocol before writing. A later edit stays dirty; replacing a document detaches
+its old save destination. Source conflicts never overwrite the changed file.
+Selection is restored after document pushes and published through the host's
+model-context capability. Code-panel requests reuse the existing captured-target
+and version guards, hand off through `ui/message` when supported, and consume
+`canvas_codegen_complete` results. A missing acknowledgement never replays a
+mutation or a chat message.
+
+`scripts/native-host-harness.mjs FILE.op` exercises the actual MCP Apps JSON-RPC
+transport with an isolated daemon. Its iframe and `/direct` diagnostic view
+are local test hosts, not Codex. Save/reopen, model context and Code-panel handoff
+must be checked there before desktop acceptance. The harness records messages
+instead of sending them to an AI provider. Existing tests cover stale snapshots,
+concurrent saves, document replacement and cancellation.

@@ -46,7 +46,7 @@ test('Host media preference drives top-level panel startup and live switching', 
   assert.equal(panel.theme(), 'dark');
   assert.equal(new URL(panel.frame.src).searchParams.get('theme'), 'dark');
   panel.frame.emit('load');
-  assert.equal(panel.editorMessages.at(-2).type, 'op-bridge/init');
+  assert.equal(panel.editorMessages.at(-3).type, 'op-bridge/init');
   assert.equal(panel.editorMessages.at(-1).type, 'op-bridge/theme');
   assert.equal(panel.editorMessages.at(-1).colorScheme, 'dark');
   panel.editor({ type: 'op-bridge/ready', generation: 3, revision: 4 });
@@ -70,7 +70,7 @@ test('Embedded panel seeds from host theme and resends the latest theme after ed
   assert.ok(panel.hostMessages.some(item => item.data.type === 'codex-canvas/ready'));
   panel.host(panelTheme('light'));
   panel.editor({ type: 'op-bridge/listening' });
-  assert.equal(panel.editorMessages.at(-2).type, 'op-bridge/init');
+  assert.equal(panel.editorMessages.at(-3).type, 'op-bridge/init');
   assert.equal(panel.editorMessages.at(-1).colorScheme, 'light');
   panel.editor({ type: 'op-bridge/ready', generation: 1, revision: 0 });
   assert.equal(panel.editorMessages.at(-1).colorScheme, 'light');

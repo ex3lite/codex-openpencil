@@ -1,0 +1,30 @@
+# OpenPencil для Codex — русская версия
+
+Форк [ZSeven-W/codex-openpencil](https://github.com/ZSeven-W/codex-openpencil). Редактор и файлы работают локально. Отдельная подписка на редактор и ключ API для использования через текущий Codex не нужны. Работа модели Codex требует её обычного подключения и расходует лимиты вашего аккаунта.
+
+Русифицированы оболочка холста, сохранение, выделение и панель генерации кода. Плагин передаёт `ru` при первой загрузке и повторной инициализации. Нужен соответствующий [форк Rust-движка](https://github.com/ex3lite/openpencil/tree/codex/russian-localization): в исходной стабильной сборке протокол встраивания разрешает только `zh-CN` и `en-US`.
+
+## Сборка локального runtime
+
+1. Соберите WebAssembly по `README.ru.md` в форке движка.
+2. Подготовьте штатный runtime 0.8.5/d155cd0: `npm run setup`. Существующая установка подходит.
+3. Соберите отдельный runtime, указав абсолютные пути:
+
+```sh
+node scripts/localize-runtime.mjs /absolute/base-runtime /absolute/openpencil /absolute/new-russian-runtime
+npm run configure-runtime -- /absolute/new-russian-runtime
+```
+
+Скрипт проверяет исходный runtime, сохраняет его daemon и CanvasKit, заменяет WASM/JS и каталоги из чистого Git-коммита форка. Новый манифест содержит SHA коммита локализации и SHA-256 каждого файла. Исходная установка сохраняется; существующий каталог назначения не перезаписывается.
+
+Подключите локальный marketplace из этого репозитория в Codex. Для ручного запуска: `npm run canvas -- --file /absolute/document.op`. Файл `.op` сохраняет редактируемые слои.
+
+## Проверка
+
+```sh
+npm run check
+npm test
+npm run smoke -- --binary /absolute/new-russian-runtime/bin/op-host-web-server
+```
+
+Smoke-тест создаёт отдельный тестовый документ. Не используйте пользовательский макет как тестовый файл. Лицензия исходного проекта — MIT; авторство и лицензии вложенных компонентов сохранены.

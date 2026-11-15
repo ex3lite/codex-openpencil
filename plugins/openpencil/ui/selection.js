@@ -6,14 +6,14 @@ function isSelectionReadError(error) {
 function selectionReadFailed(error) {
   renderSelection(null);
   el('selection-label').textContent = isSelectionReadError(error)
-    ? error.code === 'SELECTION_STALE' ? '请重新选择元素' : '正在同步选区…'
-    : '选区暂不可用';
+    ? error.code === 'SELECTION_STALE' ? 'Выберите элемент снова' : 'Синхронизация выделения…'
+    : 'Выделение временно недоступно';
 }
 
 function renderSelection(value) {
   const selection = value?.count > 0 && Array.isArray(value.nodeIds) && value.count === value.nodeIds.length ? value : null;
-  const names = selection?.nodes?.map(node => node.name || node.id).join('、') || '';
-  const text = selection ? `已选 ${selection.count} 个元素${names ? ` · ${names}` : ''}` : '未选中元素';
+  const names = selection?.nodes?.map(node => node.name || node.id).join(', ') || '';
+  const text = selection ? `Выбрано: ${selection.count}${names ? ` · ${names}` : ''}` : 'Ничего не выбрано';
   el('selection-label').textContent = text;
   el('selection-label').title = text;
 }

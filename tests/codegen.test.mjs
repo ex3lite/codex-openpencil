@@ -140,7 +140,7 @@ test('Panel flushes first, shows baseline, polls final source, and ignores late 
 
 test('Top-level browser returns usable source and an honest chat continuation, without a host submission', async () => {
   const ui = await readyCodePanel(false); await generate(ui);
-  assert.ok(ui.editorMessages.at(-1).notice.includes('继续转代码'));
+  assert.ok(ui.editorMessages.at(-1).notice.includes('Продолжи реализацию'));
   assert.ok(!ui.hostMessages.some(item=>item.data.type==='codex-canvas/codegen'));
   const before = ui.rpcCalls.length;
   ui.editor({type:'op-bridge/codegen-request',requestId:'host-123-2',framework:'html',nodeIds:[]},'https://foreign.example');

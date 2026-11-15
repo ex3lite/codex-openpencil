@@ -29,11 +29,11 @@ export async function readCanvasSelection(session, { fresh = false } = {}) {
   const live = !fresh && session.selectionDocument ? await session.selectionDocument(before.pageIndex) : await session.document();
   const after = await state();
   if (!sameSelection(before, after) || before.pageIndex !== after.pageIndex || after.pageIndex !== live.activePageIndex) {
-    throw selectionError('选区或页面正在切换，请确认选中的元素后重试。', 'SELECTION_TRANSITION');
+    throw selectionError('Выделение или страница меняется. Проверьте выбранные элементы и повторите.', 'SELECTION_TRANSITION');
   }
   const document = live.document;
   const page = document.pages?.length ? document.pages[after.pageIndex] : document;
-  if (!page || (document.pages?.length && page.id !== after.pageId)) throw selectionError('页面尚在同步，请稍后重试。', 'SELECTION_TRANSITION');
+  if (!page || (document.pages?.length && page.id !== after.pageId)) throw selectionError('Страница синхронизируется. Повторите позже.', 'SELECTION_TRANSITION');
   const nodes = new Map();
   const visit = (children, parentId = null) => {
     for (const node of children || []) {
@@ -42,6 +42,6 @@ export async function readCanvasSelection(session, { fresh = false } = {}) {
     }
   };
   visit(page.children);
-  if (after.nodeIds.some(id => !nodes.has(id))) throw selectionError('选中的元素已不存在，请重新选择。', 'SELECTION_STALE');
+  if (after.nodeIds.some(id => !nodes.has(id))) throw selectionError('Выбранных элементов больше нет. Выделите их снова.', 'SELECTION_STALE');
   return { live, selection: { ...after, count: after.nodeIds.length, nodes: after.nodeIds.map(id => nodes.get(id)) } };
 }

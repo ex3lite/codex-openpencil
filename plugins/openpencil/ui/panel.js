@@ -30,9 +30,10 @@ function fail(error, kind = 'operation') {
 function clearError(kind) { errors.delete(kind); renderError(); }
 function status(text) { el('status').textContent = text; }
 function restoreStatus() {
-  status(errors.has('sync') ? '同步冲突' : errors.has('save') ? '保存未完成' : connectionInterrupted ? '画布连接中断' : dirty ? '未保存' : '画布已连接');
+  status(errors.has('sync') ? 'Конфликт синхронизации' : errors.has('save') ? 'Не удалось сохранить' : connectionInterrupted ? 'Соединение с холстом прервано' : dirty ? 'Есть изменения' : 'Холст подключён');
 }
 function send(value) { frame.contentWindow?.postMessage(JSON.stringify(value), grant.editorOrigin); }
+function sendLocale() { send({ type:'op-bridge/locale', locale:'ru' }); }
 function sendTheme() { if (editorInitialized) send({ type:'op-bridge/theme', colorScheme }); }
 function applyTheme() {
   const nextTheme = parentTheme || compatibilityTheme || (systemTheme?.matches ? 'dark' : 'light');
@@ -48,6 +49,7 @@ function notifyParentReady() {
 function initialize() {
   send({ type: 'op-bridge/init', token: grant.token });
   editorInitialized = true;
+  sendLocale();
   sendTheme();
 }
 systemTheme?.addEventListener('change', applyTheme);
@@ -62,14 +64,14 @@ async function rpc(name, args = {}) {
   const response = await fetch(grant.rpcPath, { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, arguments: args }), signal: AbortSignal.timeout(15_000) });
   const value = await response.json();
-  if (!response.ok || value.error || value.isError) throw Object.assign(new Error(value.error || value.content?.[0]?.text || '画布操作失败'), { code: value.code || value.structuredContent?.code });
+  if (!response.ok || value.error || value.isError) throw Object.assign(new Error(value.error || value.content?.[0]?.text || 'Не удалось выполнить действие на холсте'), { code: value.code || value.structuredContent?.code });
   return value.structuredContent;
 }
-function updateSource() { el('document-label').textContent = source || '未命名设计 · 独立文档'; el('document-label').title = source || ''; }
+function updateSource() { el('document-label').textContent = source || 'Без названия · Локальный документ'; el('document-label').title = source || ''; }
 function flush() {
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { snapshots.delete(requestId); reject(new Error('画布同步超时。请检查内容后重新保存，操作不会自动重试。')); }, 15_000);
+    const timer = setTimeout(() => { snapshots.delete(requestId); reject(new Error('Холст не ответил вовремя. Проверьте изменения и сохраните снова. Автоматического повтора не будет.')); }, 15_000);
     snapshots.set(requestId, { resolve, reject, timer });
     send({ type: 'op-bridge/snapshot', purpose: 'save', requestId });
   });
@@ -77,7 +79,7 @@ function flush() {
 async function save(path = source) {
   if (!ready || saving) return;
   if (!path) { el('save-dialog').showModal(); el('file-path').focus(); return; }
-  saving = true; el('save').disabled = el('save-as').disabled = true; status('正在保存…'); clearError('save');
+  saving = true; el('save').disabled = el('save-as').disabled = true; status('Сохранение…'); clearError('save');
   try {
     const snapshot = await flush();
     const result = await rpc('canvas_save', { filePath: path, docJson: snapshot.docJson });
@@ -85,8 +87,8 @@ async function save(path = source) {
     // A later edit must stay dirty even when an earlier Save completes.
     if (generation === snapshot.generation && revision === snapshot.revision) dirty = false;
     send({ type: 'op-bridge/save-committed', generation: snapshot.generation, revision: snapshot.revision });
-    clearError('sync'); updateSource(); status(dirty ? '有新的未保存修改' : '已保存');
-  } catch (error) { fail(error, 'save'); status('保存未完成'); }
+    clearError('sync'); updateSource(); status(dirty ? 'Есть новые изменения' : 'Сохранено');
+  } catch (error) { fail(error, 'save'); status('Не удалось сохранить'); }
   finally { saving = false; el('save').disabled = el('save-as').disabled = !ready; }
 }
 function checkpointSoon() {
@@ -111,7 +113,7 @@ window.addEventListener('message', event => {
     ready = true; generation = value.generation; revision = value.revision;
     el('loading').hidden = true; el('save').disabled = el('save-as').disabled = false;
     connectionInterrupted = false; clearError('connection'); restoreStatus();
-    sendTheme(); notifyParentReady();
+    sendLocale(); sendTheme(); notifyParentReady();
     if (!launchAcknowledged && /^[A-Za-z0-9_-]{22}$/.test(browserLaunchId || '')) {
       launchAcknowledged = true;
       void rpc('canvas_launch_ready', { launchId: browserLaunchId }).catch(() => {});
@@ -122,22 +124,22 @@ window.addEventListener('message', event => {
     generation = value.generation; revision = value.revision; dirty = Boolean(value.dirty) || dirty;
     if (!saving && dirty) restoreStatus(); checkpointSoon();
   }
-  if (value.type === 'op-bridge/sync-conflict') { dirty = true; status('同步冲突'); fail(new Error('设计在同步过程中发生变化。请在编辑器中处理冲突，再保存。'), 'sync'); }
+  if (value.type === 'op-bridge/sync-conflict') { dirty = true; status('Конфликт синхронизации'); fail(new Error('Макет изменился во время синхронизации. Разрешите конфликт в редакторе и сохраните снова.'), 'sync'); }
   if (value.type === 'op-bridge/snapshot-result' || value.type === 'op-bridge/snapshot-conflict') {
     const pending = snapshots.get(value.requestId);
     if (!pending) return;
     clearTimeout(pending.timer); snapshots.delete(value.requestId);
-    if (value.type === 'op-bridge/snapshot-conflict') pending.reject(new Error('设计已发生变化，保存已停止。请同步后重试。'));
+    if (value.type === 'op-bridge/snapshot-conflict') pending.reject(new Error('Макет изменился: сохранение остановлено. Дождитесь синхронизации и повторите.'));
     else pending.resolve(value);
   }
   if (value.type === 'op-shell/save') void save();
 });
 frame.addEventListener('load', initialize);
-frame.src = `${grant.editorOrigin}/?embed=vscode&chat=host&locale=zh-CN&theme=${colorScheme}`;
+frame.src = `${grant.editorOrigin}/?embed=vscode&chat=host&locale=ru&theme=${colorScheme}`;
 notifyParentReady();
 updateSource();
 const startup = setInterval(() => { if (ready) clearInterval(startup); else initialize(); }, 1000);
-setTimeout(() => { if (!ready) { clearInterval(startup); connectionInterrupted = true; fail(new Error('编辑器尚未连接。请检查运行包、页面加载或插件连接后重新打开画布。'), 'connection'); } }, 30_000);
+setTimeout(() => { if (!ready) { clearInterval(startup); connectionInterrupted = true; fail(new Error('Редактор ещё не подключён. Проверьте загрузку страницы и подключение плагина, затем откройте холст снова.'), 'connection'); } }, 30_000);
 el('error-dismiss').onclick = () => { for (const error of errors.values()) error.dismissed = true; renderError(); };
 el('save').onclick = () => void save();
 el('save-as').onclick = () => { el('file-path').value = source || ''; el('save-dialog').showModal(); };

@@ -36,7 +36,7 @@ test('Selection resolves nested IDs on the active page without leaking document 
 test('Missing nodes, page switches and failed selection reads cannot broaden an edit', async () => {
   await assert.rejects(readCanvasSelection(session([raw('deleted')])),error => error.code === 'SELECTION_STALE');
   await assert.rejects(readCanvasSelection(session([raw('title'),raw('other')])),error => error.code === 'SELECTION_TRANSITION');
-  await assert.rejects(readCanvasSelection(session([raw('title','other-page',1)])),/切换/);
+  await assert.rejects(readCanvasSelection(session([raw('title','other-page',1)])),error => error.code === 'SELECTION_TRANSITION' && /[А-Яа-яЁё]/u.test(error.message));
   await assert.rejects(readCanvasSelection({forward:async()=>({result:{isError:true}})}),/Cannot read/);
 });
 
@@ -124,13 +124,13 @@ async function readyPanel(embedded = true) {
 test('Selection reminder follows single, multiple and cleared targets without an edit workflow', async () => {
   for (const embedded of [true,false]) {
     const ui = await readyPanel(embedded);
-    assert.equal(ui.element('selection-label').textContent,'已选 1 个元素 · title');
+    assert.equal(ui.element('selection-label').textContent,'Выбрано: 1 · title');
     ui.rpc(() => ({selection:selection(['card','title']),version:7}));
     await ui.state('refreshCanvas()');
-    assert.equal(ui.element('selection-label').textContent,'已选 2 个元素 · card、title');
+    assert.equal(ui.element('selection-label').textContent,'Выбрано: 2 · card, title');
     ui.rpc(() => ({selection:selection([]),version:7}));
     await ui.state('refreshCanvas()');
-    assert.equal(ui.element('selection-label').textContent,'未选中元素');
+    assert.equal(ui.element('selection-label').textContent,'Ничего не выбрано');
     assert.equal(ui.editorMessages.filter(item=>item.type==='op-bridge/snapshot').length,0);
     assert.ok(ui.rpcCalls.every(item=>JSON.parse(item.options.body).name==='canvas_status'));
     assert.ok(!ui.hostMessages.some(item=>item.data.type==='codex-canvas/prompt'));

@@ -23,8 +23,8 @@ test('Selection/page transition polling recovers automatically, including older 
     ui.rpc(() => ({error:transition,code}),{raw:true});
     await ui.state('refreshCanvas()');
     assert.equal(ui.element('error').hidden,true);
-    assert.equal(ui.element('selection-label').textContent,'正在同步选区…');
-    assert.notEqual(ui.element('status').textContent,'画布连接中断');
+    assert.equal(ui.element('selection-label').textContent,'Синхронизация выделения…');
+    assert.notEqual(ui.element('status').textContent,'Соединение с холстом прервано');
     assert.equal(ui.hostMessages.at(-1).data.selection,null,'The host must not retain a stale target');
     ui.rpc(() => ({version:7,selection:selected('next-title','page-2')}));
     await ui.state('refreshCanvas()');
@@ -40,11 +40,11 @@ test('Real connection failures remain visible and clear when the canvas reconnec
   await ui.state('refreshCanvas()');
   assert.equal(ui.element('error').hidden,false);
   assert.equal(ui.element('error-message').textContent,'Runtime disconnected');
-  assert.equal(ui.element('status').textContent,'画布连接中断');
+  assert.equal(ui.element('status').textContent,'Соединение с холстом прервано');
   ui.rpc(() => ({version:7,selection:selected()}));
   await ui.state('refreshCanvas()');
   assert.equal(ui.element('error').hidden,true);
-  assert.equal(ui.element('status').textContent,'画布已连接');
+  assert.equal(ui.element('status').textContent,'Холст подключён');
   assert.match(ui.element('selection-label').textContent,/title/);
 });
 
@@ -58,21 +58,21 @@ test('Successful selection polls cannot erase failed saves or sync conflict warn
   assert.equal(ui.element('error-message').textContent,'Source changed outside the canvas');
   await ui.state('refreshCanvas()');
   assert.equal(ui.element('error').hidden,false);
-  assert.equal(ui.element('status').textContent,'保存未完成');
+  assert.equal(ui.element('status').textContent,'Не удалось сохранить');
   ui.rpc(() => { throw new Error('Offline'); }); await ui.state('refreshCanvas()');
   assert.equal(ui.element('error-message').textContent,'Source changed outside the canvas');
   ui.editor({type:'op-bridge/sync-conflict'});
   ui.rpc(() => ({version:8,selection:selected()})); await ui.state('refreshCanvas()');
   assert.equal(ui.element('error').hidden,false);
-  assert.match(ui.element('error-message').textContent,/同步过程中发生变化/);
-  assert.equal(ui.element('status').textContent,'同步冲突');
+  assert.match(ui.element('error-message').textContent,/Макет изменился во время синхронизации/);
+  assert.equal(ui.element('status').textContent,'Конфликт синхронизации');
 });
 
 test('Deleted selection clears stale context and recovers when another element is selected', async () => {
   const ui = await panel();
   ui.rpc(() => ({error:'选中的元素已不存在，请重新选择。',code:'SELECTION_STALE'}),{raw:true});
   await ui.state('refreshCanvas()');
-  assert.equal(ui.element('selection-label').textContent,'请重新选择元素');
+  assert.equal(ui.element('selection-label').textContent,'Выберите элемент снова');
   assert.equal(ui.hostMessages.at(-1).data.selection,null);
   assert.equal(ui.element('error').hidden,true);
   ui.rpc(() => ({version:7,selection:selected('other')}));
@@ -87,7 +87,7 @@ test('Dismissed persistent warnings stay closed across identical polls and reapp
   ui.element('error-dismiss').onclick();
   assert.equal(ui.element('error').hidden,true);
   await ui.state('refreshCanvas()'); assert.equal(ui.element('error').hidden,true);
-  assert.equal(ui.element('status').textContent,'画布连接中断');
+  assert.equal(ui.element('status').textContent,'Соединение с холстом прервано');
   ui.rpc(() => { throw new Error('Runtime ended'); }); await ui.state('refreshCanvas()');
   assert.equal(ui.element('error').hidden,false);
   assert.equal(ui.element('error-message').textContent,'Runtime ended');

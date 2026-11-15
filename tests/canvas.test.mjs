@@ -55,7 +55,7 @@ test('Incomplete or cross-platform runtimes fail before spawning an editor', asy
 });
 
 test('A managed canvas routes all tools to the same daemon and protects save_document', async t => {
-  const controller = new CanvasController({ port: 1 });
+  const controller = new CanvasController({ port: 1, nativeHtmlLoader: async()=>'<html>OpenPencilEngine</html>' });
   t.after(() => controller.close());
   const calls = [];
   controller.session = { source: '/example.op', draft: '/recovery.op', version: '0.8.5', port: 1234, token: 'private-lifecycle-token',
@@ -79,7 +79,7 @@ test('A managed canvas routes all tools to the same daemon and protects save_doc
 });
 
 test('UI resources and canvas tools remain available with the standalone editor offline', async t => {
-  const controller = new CanvasController({ port: 1 });
+  const controller = new CanvasController({ port: 1, nativeHtmlLoader: async()=>'<html>OpenPencilEngine</html>' });
   t.after(() => controller.close());
   const list = await controller.dispatch({ jsonrpc:'2.0',id:1,method:'tools/list' });
   const open = list.result.tools.find(tool=>tool.name==='open_canvas');
@@ -91,8 +91,11 @@ test('UI resources and canvas tools remain available with the standalone editor 
   const resource = await controller.dispatch({jsonrpc:'2.0',id:2,method:'resources/read',params:{uri:CANVAS_URI}});
   const item = resource.result.contents[0];
   assert.equal(item.mimeType,'text/html;profile=mcp-app');
-  assert.deepEqual(item._meta.ui.csp.frameDomains,[controller.panel.origin]);
+  assert.deepEqual(item._meta.ui.csp.frameDomains,[]);
+  assert.ok(item.text.includes('OpenPencilEngine'));
+  assert.ok(!item.text.includes('<iframe'));
   assert.ok(!controller.session, 'UI preloading must not switch or spawn a document');
+  await controller.ensurePanel();
   const blocked = await fetch(controller.panel.url + '/rpc', {method:'POST',headers:{Origin:'https://foreign.example','Content-Type':'application/json'},body:'{}'});
   assert.equal(blocked.status,403);
   assert.equal((await fetch(controller.panel.origin+'/canvas/not-a-capability')).status,404);

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "openpencil",
-  "version": "0.3.13",
+  "version": "0.4.1",
   "description": "Локальные редактируемые макеты OpenPencil в Codex. Русская версия.",
   "author": {
     "name": "ZSeven-W",

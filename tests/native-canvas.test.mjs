@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {nativeRoute,embedNativeScript} from '../plugins/openpencil/scripts/native-canvas.mjs';
+test('native bridge only accepts its editor document and static resource routes',()=>{
+ for(const path of ['/api/mcp/version','/api/mcp/document','/assets/i18n/ru.json','/pkg/op_host_web_bg.wasm'])assert.equal(nativeRoute(path),path);
+ assert.equal(nativeRoute('/api/mcp/document','POST'),'/api/mcp/document');
+ for(const path of ['https://example.com/','//example.com/file','/assets/../secret','/assets/%2e%2e/secret','/api/settings/credentials','/api/file/save'])assert.throws(()=>nativeRoute(path));
+ assert.throws(()=>nativeRoute('/assets/icon.json','POST'));
+ assert.throws(()=>nativeRoute('/api/mcp/document?tenant=someone-else'));
+});
+
+test('bundled script preserves replacement tokens and cannot terminate the HTML script',()=>{
+ const source = `globalThis.fixture = ["$&", "$'", "$\`", "</script>"];`;
+ const html=embedNativeScript('<script>/* NATIVE_SCRIPT */</script>',source);
+ assert.equal((html.match(/<\/script>/g)||[]).length,1);
+ const script=html.slice(8,-9);
+ const context={};
+ new Function('globalThis',script)(context);
+ assert.deepEqual(context.fixture,["$&", "$'", "$`", "</script>"]);
+});

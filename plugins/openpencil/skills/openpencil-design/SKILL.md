@@ -14,14 +14,15 @@ Use the connected Rust MCP tools as the source of truth. Start with
 content and use the user's chosen file, page, selection, and reference.
 For connection failures, see [setup](../openpencil-setup/SKILL.md).
 
-For a requested interactive conversation canvas in Codex, call `canvas_open_browser`
-and open its returned `panelUrl` in the Codex browser panel or the user's existing
-browser. Codex currently blocks local HTTP iframes in MCP Apps. If only
-`open_canvas` is available, use its returned URL the same way. Pass the
-chosen existing file, or omit the path for a new document. Verify `canvas_status`
-and `get_editor_state`. All native tools then edit that managed canvas. Show the
-UI resource or local panel URL. Do not open a new managed document just to inspect
-the user's existing desktop selection.
+For an interactive canvas in Codex, call `open_canvas` and use its MCP App
+thread entrypoint. The original Rust editor runs directly inside that panel;
+Codex remains the only chat and model connection. Pass the chosen existing
+file, or omit the path for a new document. Verify `canvas_status` and
+`get_editor_state`. All native tools then edit that managed canvas.
+A local `panelUrl` is an optional browser fallback. Do not open it instead of
+the native app unless the user requested that or a concrete host limitation
+has been explained. Resource retrieval alone does not prove visible rendering.
+Do not open a new managed document merely to inspect an existing selection.
 
 ## Establish the output
 
@@ -116,8 +117,10 @@ completion.
    is unavailable, report that limit rather than claiming a visual pass.
    For phone screens with system chrome, verify exactly one complete set of
    time, cellular signal, Wi-Fi, and battery indicators, with no duplicate bar.
-3. For managed interactive persistence, the panel Save button flushes pending
-   browser edits. `canvas_save` and intercepted `save_document` save the daemon's
+3. For managed interactive persistence, confirmed document pushes checkpoint
+   the recovery draft. The native 0.4 panel does not yet provide a host Save
+   button with an acknowledged editor flush. Do not assume an immediate save
+   includes unsynchronized keystrokes. `canvas_save` and intercepted `save_document` save the daemon's
    current snapshot; verify pending edits have synced before calling them. Save
    As requires a new path; source conflicts stop saves and retain recovery drafts.
    For an existing desktop editor, call `save_document` with the intended absolute

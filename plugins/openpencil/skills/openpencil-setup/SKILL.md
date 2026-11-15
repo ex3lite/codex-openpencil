@@ -12,27 +12,21 @@ payload manifest, version and platform before configuring or starting it.
 
 ## Interactive canvas
 
-1. In Codex, call `canvas_open_browser`, optionally with the user's existing
-   absolute `.op` path, then open its `panelUrl` in the Codex browser panel
-   (`open_in_codex`, browser target) or `@Browser`. Use an external browser only
-   when the user explicitly requests one. The source
-   is copied into a recovery draft. If only `open_canvas` is available, its
-   returned `panelUrl` works the same way. Codex currently filters local HTTP
-   iframe origins, so its MCP Apps entrypoint shows a browser launcher. Do not
-   request weaker browser security or claim an embedded canvas was verified.
-   Its button prepares the same canvas URL and, where host text messaging is
-   supported, sends one opening request to the current chat through `ui/message`.
-   Open the supplied exact URL with `open_in_codex` (browser target) or `@Browser`;
-   preserve its theme/launch fragment so the panel can confirm editor readiness.
-   Do not create a second canvas, launch an OS browser or use a deep-link workaround.
-   Without host messaging, the user copies an opening instruction into the current
-   chat. A message acknowledgment is not a connected canvas. `ui/open-link`
-   acknowledgments also do not prove navigation: the current bridge drops HTTP URLs.
+1. In Codex, call `open_canvas`, optionally with the user's absolute `.op`
+   path, and use its MCP App thread entrypoint. Version 0.4 embeds the original
+   Rust/CanvasKit editor directly in the UI resource. It transports document
+   and local asset requests through the app-only `canvas_native_request` tool;
+   it does not embed a localhost iframe. The source is copied into a recovery
+   draft. Codex owns the conversation: do not configure a second AI provider.
+   A local `panelUrl` is a separate browser fallback, not proof of native UI.
+   Use `canvas_open_browser` only for an explicitly requested browser editor
+   or a disclosed host limitation. Never silently substitute that view for
+   the requested app-in-chat integration.
 2. Missing runtime configuration triggers installation automatically. Allow the
    initial download to finish; do not repeatedly call either opener after a host
    timeout. For preflight or a slow connection, run
    `node scripts/runtime-install.mjs` from the installed plugin directory, then
-   call `canvas_open_browser`. Failed downloads do not configure partial runtimes.
+   call `open_canvas`. Failed downloads do not configure partial runtimes.
    Existing invalid configurations are reported without switching runtimes.
    Configuration stays private in `~/.codex-openpencil/runtime.json`.
    A complete custom package can be selected with
@@ -44,7 +38,8 @@ payload manifest, version and platform before configuring or starting it.
 4. Each conversation keeps one canvas. Use another chat for a different document.
    Recovery drafts survive in `~/.codex-openpencil/sessions/`. A stopped session's
    URL is temporary; reopen its recovery file in a new session.
-5. Reconnect or open a new chat after upgrading the plugin. Resource loading and
+5. Reconnect or start a fresh turn after upgrading the plugin. If this chat
+   still has a closed or old MCP transport, reload Codex before opening the app. Resource loading and
    visibly displayed embedded host UI are separate verification steps.
 
 For a new install, follow the public repository's

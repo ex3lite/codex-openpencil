@@ -16,6 +16,8 @@
 - Inspector widget regression: reproduced the hidden widget before the constructor guard; passed after the fix.
 - Web host tests and official WASM bundle gates passed. Gzip size: 5,346,638 bytes; zero env imports.
 - Staged runtime source: `d8dbaeab100e35068e46369ab53d3d39bc7cb4d5`; all 288 runtime files verified.
+- Installed plugin 0.13.1: all 92 source package files match the installed cache byte for byte. Global runtime config points at the staged 0.13.1 runtime.
+- A fresh Codex app-server loader read `ui://openbrush/native/v0.13.1.html` (11,438,462 bytes) successfully. This verifies discovery/resource assembly, not rendering in the current desktop chat. The already open panel still displayed the 0.13.0 toolbar before the restart handoff.
 
 ## Actual Codex acceptance, performed on 0.13.0 before the patch
 

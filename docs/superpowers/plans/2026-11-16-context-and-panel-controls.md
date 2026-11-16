@@ -5,4 +5,5 @@
 - [x] Add independent layer and inspector toggles, actual post-paint state acknowledgements and a visible inspector close button. Preserve selection and geometry when hiding panels.
 - [x] Add regression checks for explicit context, private panel state, visibility predicates and state labels. Build and verify the runtime once all engine changes are complete.
 - [x] Verify autosave and real concurrent Codex agents on the existing isolated canvas; verify comments through the actual MCP App, record any host/tool limits.
-- [ ] Package/install the fix and distinguish actual Codex results from local harness validation.
+- [x] Package/install the fix and distinguish actual Codex results from local harness validation.
+- [ ] After the desktop reload, verify the 0.13.1 controls in a newly opened native MCP App; the old panel still holds 0.13.0.

@@ -55,7 +55,7 @@ const nativeBridge = (() => {
   }
   async function call(name, args = {}) {
     if (typeof nativeTransfer !== 'undefined') args = await nativeTransfer.prepare(call, name, args);
-    const longOperation = ['open_canvas', 'canvas_document_open', 'canvas_document_import', 'canvas_community_import', 'canvas_autosave', 'canvas_save', 'canvas_history_restore'].includes(name) || name === 'canvas_native_request' && args.path === '/api/mcp/document';
+    const longOperation = ['open_canvas', 'canvas_document_open', 'canvas_document_import', 'canvas_community_import', 'canvas_autosave', 'canvas_save', 'canvas_history_restore', 'canvas_icon_pack_acquire', 'canvas_icon_pack_update', 'canvas_fonts_prepare'].includes(name) || name === 'canvas_native_request' && args.path === '/api/mcp/document';
     const result = typeof OP_PREVIEW !== 'undefined'
       ? await (await previewFetch(OP_PREVIEW, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, arguments: args }) })).json()
       : await request('tools/call', sessionRef
@@ -69,7 +69,7 @@ const nativeBridge = (() => {
     async init() {
       if (initialized) return initialized;
       if (typeof OP_PREVIEW !== 'undefined') return { hostCapabilities: {}, hostContext: {} };
-      initialized = await request('ui/initialize', { appInfo: { name: 'OpenBrush', version: '0.10.0' },
+      initialized = await request('ui/initialize', { appInfo: { name: 'OpenBrush', version: '0.10.1' },
         appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' });
       capabilities = initialized.hostCapabilities || {};
       context = { ...initialized.hostContext, ...context };

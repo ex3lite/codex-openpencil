@@ -24,8 +24,16 @@ test('dirty bursts auto-save once without a save dialog',async()=>{
   assert.equal(f.calls.some(c=>c.name==='canvas_save'),false);
   assert.equal(f.timers.size,0);
 });
+test('bridge readiness does not autosave the temporary starter document before the daemon pull',async()=>{
+  const f=fixture();await f.emit({type:'op-bridge/ready',generation:1,revision:0});await f.runTimers();
+  assert.equal(f.calls.filter(c=>c.name==='canvas_autosave').length,0);
+  await f.emit({type:'op-bridge/dirty-changed',dirty:false,generation:2,revision:0});await f.runTimers();
+  assert.equal(f.calls.filter(c=>c.name==='canvas_autosave').length,0);
+  await f.emit({type:'op-bridge/dirty-changed',dirty:true,generation:2,revision:1});await f.runTimers();
+  assert.equal(f.calls.filter(c=>c.name==='canvas_autosave').length,1);
+});
 test('an uncertain autosave error is surfaced and never automatically retried',async()=>{
-  const f=fixture(true);await f.emit({type:'op-bridge/ready',generation:1,revision:2});await f.runTimers();
+  const f=fixture(true);await f.emit({type:'op-bridge/ready',generation:1,revision:0});await f.emit({type:'op-bridge/dirty-changed',dirty:true,generation:1,revision:2});await f.runTimers();
   await f.emit({type:'op-bridge/dirty-changed',dirty:true,generation:1,revision:3});await f.runTimers();
   assert.equal(f.calls.filter(c=>c.name==='canvas_autosave').length,1);
   assert.match(f.elements.get('status-message').textContent,/external source changed/);
@@ -34,7 +42,7 @@ test('an uncertain autosave error is surfaced and never automatically retried',a
 test('a rejected snapshot waits for a distinct edit before another autosave',async()=>{
   let attempts=0;
   const f=fixture(()=>{if(++attempts===1)throw Object.assign(Error('stale snapshot'),{code:'DOCUMENT_SNAPSHOT_STALE'});});
-  await f.emit({type:'op-bridge/ready',generation:1,revision:2});await f.runTimers();
+  await f.emit({type:'op-bridge/ready',generation:1,revision:0});await f.emit({type:'op-bridge/dirty-changed',dirty:true,generation:1,revision:2});await f.runTimers();
   assert.match(f.elements.get('status-message').textContent,/Файл не изменён/);
   assert.equal(f.timers.size,0);
   await f.emit({type:'op-bridge/dirty-changed',dirty:true,generation:1,revision:2});await f.runTimers();
@@ -48,7 +56,7 @@ test('a rejected snapshot waits for a distinct edit before another autosave',asy
 test('an explicit Save can present a fresh snapshot after rejection',async()=>{
   let attempts=0;
   const f=fixture(()=>{if(++attempts===1)throw Object.assign(Error('stale snapshot'),{code:'DOCUMENT_SNAPSHOT_STALE'});});
-  await f.emit({type:'op-bridge/ready',generation:1,revision:2});await f.runTimers();
+  await f.emit({type:'op-bridge/ready',generation:1,revision:0});await f.emit({type:'op-bridge/dirty-changed',dirty:true,generation:1,revision:2});await f.runTimers();
   await f.emit({type:'op-shell/save'});
   await tick();
   assert.equal(attempts,2);

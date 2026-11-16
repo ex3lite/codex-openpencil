@@ -75,7 +75,9 @@ const nativeEditor = (() => {
     if (event.type === 'op-bridge/opened' && restoring) { restoring=false; dirty=false; status('Версия восстановлена'); }
     if (event.type === 'op-bridge/listening') send({ type: 'op-bridge/init', token });
     if (event.type === 'op-bridge/ready') {
-      ready = true; generation = event.generation; revision = event.revision; updateName(); scheduleAutosave();
+      // Bridge readiness precedes the first daemon pull. Its temporary starter
+      // document must never be treated as a user edit or offered for autosave.
+      ready = true; generation = event.generation; revision = event.revision; updateName();
     }
     if (event.type === 'op-bridge/dirty-changed') {
       if (rejectedSnapshot && (event.generation !== rejectedSnapshot.generation || event.revision !== rejectedSnapshot.revision)) {

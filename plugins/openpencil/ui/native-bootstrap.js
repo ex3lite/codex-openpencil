@@ -3,10 +3,11 @@
  const fail=e=>{status.textContent=String(e?.message||e);document.documentElement.dataset.opNative='error';};
  try{
   const host=await nativeBridge.init();
-  const session=await nativeBridge.call('open_canvas',{});
+  status.textContent='Подключение к холсту этого чата…';
+  const session=await nativeBridge.openSession();
   const theme=['light','dark'].includes(host.hostContext?.theme)?host.hostContext.theme:'dark';
   document.documentElement.dataset.theme=theme;
-  status.textContent='Загрузка исходного движка OpenPencil…';
+  status.textContent='Загрузка редактора OpenBrush…';
   const url=new URL(location.href);url.searchParams.set('locale','ru');url.searchParams.set('theme',theme);url.searchParams.set('chat','host');url.searchParams.set('embed','codex');
   history.replaceState(null,'',url);
   const [engineBytes,ckBytes]=await Promise.all([unpack(OP_BINARIES.engine),unpack(OP_BINARIES.canvaskit)]);

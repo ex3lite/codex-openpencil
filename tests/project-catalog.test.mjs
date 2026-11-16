@@ -48,6 +48,21 @@ test('MCP roots are canonical, deduplicated and ambiguous roots require explicit
   await assert.rejects(resolveProjectRoot({ roots: [{ uri: 'https://example.com/project' }] }), code('INVALID_PROJECT_ROOTS'));
 });
 
+test('host roots resolve automatically without using plugin cwd or overriding explicit context', async t => {
+  const { a, b } = await projects(t);
+  let calls = 0;
+  const resolveRoots = async () => { calls++; return [{ uri: pathToFileURL(a).href }]; };
+  assert.equal((await resolveProjectRoot({ resolveRoots, cwd: b })).projectRoot, a);
+  assert.equal(calls, 1);
+  assert.equal((await resolveProjectRoot({ resolveRoots, projectRoot: b })).projectRoot, b);
+  assert.equal(calls, 1);
+  assert.equal((await resolveProjectRoot({ resolveRoots, roots: [{ uri: pathToFileURL(b).href }] })).projectRoot, b);
+  assert.equal(calls, 1);
+  for (const roots of [undefined, []]) {
+    await assert.rejects(resolveProjectRoot({ resolveRoots: async () => roots, cwd: b }), code('PROJECT_ROOT_REQUIRED'));
+  }
+});
+
 test('overlapping MCP roots cannot be silently selected from cwd', async t => {
   const { base, a } = await projects(t);
   await assert.rejects(resolveProjectRoot({ roots: [base, a].map(path => ({ uri: pathToFileURL(path).href })), cwd: a }), code('PROJECT_ROOT_AMBIGUOUS'));

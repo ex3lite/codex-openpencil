@@ -1,9 +1,9 @@
 ---
 name: openpencil-setup
-description: Connect and diagnose the local Rust OpenPencil editor for the Codex OpenPencil plugin. Use for initial setup, missing tools, or a disconnected local canvas.
+description: Connect and diagnose OpenBrush, the local Rust OpenPencil fork for Codex. Use for initial setup, missing tools, or a disconnected local canvas.
 ---
 
-# Connect OpenPencil
+# Connect OpenBrush
 
 The plugin opens a managed interactive Rust canvas or connects to an existing
 desktop editor. First canvas use automatically downloads the matching complete
@@ -12,9 +12,11 @@ payload manifest, version and platform before configuring or starting it.
 
 ## Interactive canvas
 
-1. In Codex, call `open_canvas` with `projectRoot` set to this chat's actual
+1. In Codex, automatically call `open_canvas` with `projectRoot` set to this chat's actual
    workspace, optionally with a registered `documentId` or an absolute `.op`
-   path inside that workspace, and use its MCP App thread entrypoint. Version 0.5 embeds the original
+   path inside that workspace, and use its MCP App thread entrypoint. Do not ask
+   for another project directory. If App context includes `openBrushLaunch`, pass
+   its `launchId` as well: this attaches the exact waiting panel. Version 0.6 embeds the original
    Rust/CanvasKit editor directly in the UI resource. It transports document
    and local asset requests through the app-only `canvas_native_request` tool;
    it does not embed a localhost iframe. The source is copied into a recovery
@@ -41,7 +43,7 @@ payload manifest, version and platform before configuring or starting it.
    edits. The catalog and recovery drafts live in `<projectRoot>/.openpencil/`;
    select the registered document ID to restore its draft and save destination.
    Import an external file explicitly with `canvas_document_import`, which copies
-   it into this project's `designs/` directory. One document has one writer;
+   it directly into this project folder. One document has one writer;
    subagents join that owner's canvas through scoped `canvas_agent` leases.
    A stopped session's URL is temporary. Never use a global latest document.
 5. Reconnect or start a fresh turn after upgrading the plugin. If this chat
@@ -65,7 +67,7 @@ Never mistake a successful install for a verified live canvas.
 
 ## Existing desktop editor
 
-1. Try `get_editor_state` through this plugin's OpenPencil tools. A response proves
+1. Try `get_editor_state` through this plugin's OpenBrush tools. A response proves
    the actual connection; an installed package alone does not.
 2. If unavailable, run `node scripts/mcp-bridge.mjs --doctor` from the installed
    plugin directory (two levels above this file). The doctor reads the editor's

@@ -4,8 +4,9 @@ import http from 'node:http';
 import {randomBytes} from 'node:crypto';
 import {CanvasController} from '../plugins/openpencil/scripts/canvas-controller.mjs';
 import {nativeHtml} from '../plugins/openpencil/scripts/native-canvas.mjs';
-const controller=new CanvasController();
-await controller.open({filePath:resolve(process.argv[2]),projectRoot:process.argv[3]||dirname(resolve(process.argv[2]))});
+const controller=new CanvasController(),appController=new CanvasController();
+const opened=await controller.open({filePath:resolve(process.argv[2]),projectRoot:process.argv[3]||dirname(resolve(process.argv[2]))});
+const toolResult=JSON.stringify({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:opened}).replace(/</g,'\\u003c');
 const html=await nativeHtml(),key=randomBytes(24).toString('hex');
 const report={initialized:0,methods:{},contexts:[],messages:[]};
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
@@ -18,7 +19,7 @@ const host=http.createServer(async(req,res)=>{
   if(req.headers.host!==new URL(origin).host||(req.headers.origin&&req.headers.origin!==origin)){json(res,403,{});return;}
   if(req.method==='GET'&&req.url===`/${key}/report`){json(res,200,report);return;}
   if(req.method==='GET'&&req.url===`/${key}/direct`){
-   const proxy=`<script>const harnessFetch=window.fetch.bind(window);window.addEventListener('message',async event=>{const m=event.data;if(event.source!==window||m?.jsonrpc!=='2.0'||!m.method)return;const response=await(await harnessFetch(${JSON.stringify('/'+key+'/rpc')},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(m)})).json();if(m.id!==undefined)window.postMessage(response,location.origin);});</script>`;
+   const proxy=`<script>const harnessFetch=window.fetch.bind(window);window.addEventListener('message',async event=>{const m=event.data;if(event.source!==window||m?.jsonrpc!=='2.0'||!m.method)return;const response=await(await harnessFetch(${JSON.stringify('/'+key+'/rpc')},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(m)})).json();if(m.id!==undefined)window.postMessage(response,location.origin);if(m.method==='ui/notifications/initialized')window.postMessage(${toolResult},location.origin);});</script>`;
    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});res.end(html.replace('<head>','<head>'+proxy));return;
   }
   if(req.method==='GET'&&req.url===`/${key}`){
@@ -31,7 +32,7 @@ const host=http.createServer(async(req,res)=>{
     let response;
     try {
      response=await (await fetch(${JSON.stringify('/'+key+'/rpc')},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(message)})).json();
-     if(message.method==='ui/notifications/initialized')status.textContent='MCP UI инициализирован';
+     if(message.method==='ui/notifications/initialized'){status.textContent='MCP UI инициализирован';frame.contentWindow.postMessage(${toolResult},${JSON.stringify(new URL(childUrl).origin)});}
      if(message.method==='ui/message')status.textContent='Запрос из панели «Код» получен';
      if(message.id!==undefined)frame.contentWindow.postMessage(response,${JSON.stringify(new URL(childUrl).origin)});
     } catch(error){status.textContent=error.message;}
@@ -47,7 +48,7 @@ const host=http.createServer(async(req,res)=>{
    if(message.method==='ui/update-model-context'){report.contexts.push(message.params);report.contexts=report.contexts.slice(-5);reply({});return;}
    if(message.method==='ui/message'){report.messages.push(message.params);reply({});return;}
    if(message.method==='ui/request-display-mode'){report.displayMode=message.params.mode;reply({mode:message.params.mode});return;}
-   if(message.method==='tools/call'){json(res,200,await controller.enqueue(()=>controller.dispatch(message)));return;}
+   if(message.method==='tools/call'){json(res,200,await appController.enqueue(()=>appController.dispatch(message)));return;}
    throw Error('Unsupported host method');
   }
   json(res,404,{});
@@ -55,4 +56,4 @@ const host=http.createServer(async(req,res)=>{
 });
 await new Promise(resolve=>host.listen(0,'127.0.0.1',resolve));origin=`http://127.0.0.1:${host.address().port}`;
 console.log(`${origin}/${key}`);
-process.on('SIGTERM',async()=>{await controller.close();host.close();child.close();process.exit(0);});
+process.on('SIGTERM',async()=>{await appController.close();await controller.close();host.close();child.close();process.exit(0);});

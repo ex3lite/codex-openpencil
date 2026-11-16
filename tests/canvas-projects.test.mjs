@@ -158,11 +158,11 @@ test('native New/Open quiesces agents and preserves the old daemon before alloca
   assert.equal(JSON.parse(await readFile(old.recoveryPath, 'utf8')).children[0].name, 'last agent edit');
 });
 
-test('untitled Save creates a file in this project designs directory', async t => {
+test('untitled Save creates a file directly in this project root', async t => {
   const f = await fixture(t); await detachProjectDocument(f.controller);
   f.state.document = doc('new draft');
   const saved = await f.session.save();
-  assert.ok(saved.filePath.startsWith(join(f.a, 'designs', 'untitled-')));
+  assert.ok(saved.filePath.startsWith(join(f.a, 'untitled-')));
   assert.equal(JSON.parse(await readFile(saved.filePath, 'utf8')).children[0].name, 'new draft');
 });
 
@@ -171,7 +171,7 @@ test('import copies into this project, uses a new name on collision and keeps th
   await writeFile(foreign, JSON.stringify(doc('foreign')));
   const first = await importProjectDocument(f.controller, { sourcePath: foreign });
   const second = await importProjectDocument(f.controller, { sourcePath: foreign });
-  assert.equal(first.imported.path, join(f.a, 'designs', 'external.op'));
+  assert.equal(first.imported.path, join(f.a, 'external.op'));
   assert.notEqual(first.imported.path, second.imported.path);
   assert.equal(first.documentId, f.binding.documentId); assert.equal(f.requests.length, 0);
   await writeFile(first.imported.path, JSON.stringify(doc('copy changed')));

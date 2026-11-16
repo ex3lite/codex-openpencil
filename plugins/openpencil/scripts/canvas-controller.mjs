@@ -1,9 +1,12 @@
 import { NATIVE_URI, nativeHtml, nativeRequest, nativeTools } from './native-canvas.mjs';
 import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { CanvasComments } from './canvas-comments.mjs';
 import { CanvasAgents } from './canvas-agents.mjs';
 import { startCanvasAgentBroker, callCanvasAgent } from './canvas-agent-broker.mjs';
+import { startCanvasSessionBroker, callCanvasSession } from './canvas-session-broker.mjs';
+import { prepareCanvasLaunch, publishCanvasLaunch, pollCanvasLaunch } from './canvas-launch.mjs';
 import { workspaceTools } from './canvas-workspace-tools.mjs';
 import { bindProject, attachProjectSession, projectSummary, projectDocuments, switchProjectDocument, detachProjectDocument, importProjectDocument } from './canvas-projects.mjs';
 import { EditorSession } from './editor-session.mjs';
@@ -18,12 +21,17 @@ export const CANVAS_URI = NATIVE_URI;
 const schema = properties => ({ type: 'object', properties, additionalProperties: false });
 const filePath = { type: 'string', description: 'Absolute .op path; omit to create or reopen this session’s canvas.' };
 export const canvasTools = [
+  {name:'canvas_launch_prepare',description:'App-only: prepare one correlated request to open OpenBrush in the current chat. Does not choose a directory.',inputSchema:schema({}),annotations:{destructiveHint:false,openWorldHint:false},_meta:{ui:{visibility:['app']}}},
+  {name:'canvas_launch_poll',description:'App-only: read the exact pending launch request. Never finds another chat or a latest canvas.',inputSchema:{...schema({launchId:{type:'string'}}),required:['launchId']},annotations:{readOnlyHint:true,openWorldHint:false},_meta:{ui:{visibility:['app']}}},
+  {name:'canvas_session_call',description:'App-only: route a canvas operation to the exact session returned by this chat opening OpenBrush. Never selects a global latest document.',
+    inputSchema:{...schema({projectRoot:{type:'string'},sessionId:{type:'string'},name:{type:'string'},arguments:{type:'object'}}),required:['projectRoot','sessionId','name']},
+    annotations:{destructiveHint:false,openWorldHint:false},_meta:{ui:{visibility:['app']}}},
   ...workspaceTools,
   { name: 'canvas_detach_source', description: 'App-only: detach the previous save destination after a successful New/Open/import. Does not write or delete any file.',
     inputSchema: schema({}), annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
   ...nativeTools,
-  { name: 'open_canvas', title: 'OpenPencil Canvas', description: 'Open the editable Rust canvas entrypoint: direct full Rust/CanvasKit editor inside Codex MCP Apps. Optional filePath loads an existing .op into an isolated managed session. All subsequent OpenPencil tools target this canvas until the bridge closes. Omit the path for a new document. Returns the same local panel URL as canvas_open_browser.',
-    inputSchema: schema({ filePath, projectRoot: {type:'string',description:'Absolute Codex workspace root. Required on first open; never use a global latest document.'}, documentId:{type:'string',description:'Registered document ID inside this project.'} }), annotations: { destructiveHint: false, openWorldHint: false },
+  { name: 'open_canvas', title: 'OpenBrush', description: 'Open OpenBrush inside this Codex chat. Automatically use this chat current workspace as projectRoot; do not ask the user to choose it. Host MCP roots are used when supplied. Optional filePath/documentId opens a project document; omit for a new draft. All later tools use this canvas. Return its MCP App entrypoint, not a browser fallback.',
+    inputSchema: schema({ filePath, projectRoot: {type:'string',description:'Fill automatically from this chat workspace. If omitted, use host MCP roots. Never ask for a separate project folder or use a global latest document.'}, documentId:{type:'string',description:'Registered document ID inside this project.'},launchId:{type:'string',description:'When openBrushLaunch is present in this chat App context, pass its launchId to connect that waiting panel to this canvas.'} }), annotations: { destructiveHint: false, openWorldHint: false },
     _meta: { ui: { resourceUri: CANVAS_URI }, 'openai/ui': { entrypoints: [{ type: 'thread' }], preferredModelDisplayMode: 'fullscreen' } } },
   { name: 'canvas_open_browser', description: 'Open or reconnect this chat’s managed editable canvas and return its local panelUrl. Show this URL in the Codex built-in browser with open_in_codex (browser target) or @Browser. Preserve any supplied theme/launch fragment. Use an external browser only when the user explicitly requests it. Use this when the host hides the open_canvas UI entrypoint or cannot embed local HTTP frames. All subsequent OpenPencil tools target this same canvas.',
     inputSchema: schema({ filePath, projectRoot:{type:'string'}, documentId:{type:'string'} }), annotations: { destructiveHint: false, openWorldHint: false } },
@@ -83,9 +91,13 @@ export class CanvasController {
       await attachProjectSession(this);
       await this.session.checkpoint();
       await this.resetDocumentServices();
+      this.ownerSessionId ||= randomUUID();
+      this.sessionBroker = await startCanvasSessionBroker({projectRoot:this.project.projectRoot,sessionId:this.ownerSessionId,
+        dispatch:(name,arguments_)=>this.enqueue(()=>this.call(name,arguments_))});
       await this.options.onToolsChanged?.();
       } catch(error) {
         await this.quiesceDocumentAgents().catch(()=>{});
+        await this.sessionBroker?.close().catch(()=>{});this.sessionBroker=null;
         if(this.session) await this.session.close().catch(()=>{});
         this.session=null;
         await this.releaseProjectLease?.();
@@ -95,9 +107,11 @@ export class CanvasController {
       throw Error('Холст закреплён за другим проектом. Откройте его в соответствующем чате Codex.');
     }
     this.session.assertLive();
-    const value = { filePath: this.session.source, recoveryPath: this.recoveryPath(), panelUrl: panel.url, version: this.session.version,
+    if(args.launchId) await publishCanvasLaunch(args.launchId,this.sessionBroker.identity);
+    const live=await this.session.document();
+    const value = { filePath: this.session.source, recoveryPath: this.recoveryPath(), panelUrl: panel.url, version: live.version,
       project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId };
-    return { ...toolResult(value), _meta: { canvas: { editorOrigin: `http://127.0.0.1:${this.session.port}`,
+    return { ...toolResult(value), _meta: { canvasSession:this.sessionBroker?.identity, canvas: { editorOrigin: `http://127.0.0.1:${this.session.port}`,
       token: this.session.token, panelUrl: panel.url } } };
   }
   recoveryPath() { return this.project ? join(this.project.recoveryDirectory,this.documentId+'.op') : this.session.draft; }
@@ -116,6 +130,19 @@ export class CanvasController {
     if(this.agents) {await this.agents.queue;this.agents.leases.clear();}
   }
   async call(name, args) {
+    if(name==='canvas_launch_prepare') return toolResult(await prepareCanvasLaunch());
+    if(name==='canvas_launch_poll') return toolResult(await pollCanvasLaunch(args.launchId));
+    if(name==='canvas_session_call') {
+      const {projectRoot,sessionId,name:operation,arguments:operationArgs={}}=args;
+      if(sessionId===this.ownerSessionId && projectRoot===this.project?.projectRoot) {
+        // The local harness can use one server for model and app. Avoid routing
+        // that case over HTTP back into the queue currently executing this call.
+        const {validateCanvasSessionOperation}=await import('./canvas-session-broker.mjs');
+        validateCanvasSessionOperation(operation,operationArgs);
+        return this.call(operation,operationArgs);
+      }
+      return callCanvasSession({projectRoot,sessionId},operation,operationArgs);
+    }
     if(name==='canvas_agent') {
       const {projectRoot,canvasId,action,...operation}=args;
       if(canvasId===this.agents?.canvasId) {
@@ -169,7 +196,7 @@ export class CanvasController {
     const reply = result => ({ jsonrpc: '2.0', id: message.id, result });
     try {
       if (message.method === 'resources/read' && message.params?.uri === CANVAS_URI) return reply(await this.resource());
-      if (message.method === 'resources/list') return reply({ resources: [{ uri: CANVAS_URI, name: 'OpenPencil Canvas', mimeType: 'text/html;profile=mcp-app' }] });
+      if (message.method === 'resources/list') return reply({ resources: [{ uri: CANVAS_URI, name: 'OpenBrush', mimeType: 'text/html;profile=mcp-app' }] });
       if (message.method === 'tools/call' && canvasTools.some(tool => tool.name === message.params?.name)) {
         return reply(await this.call(message.params.name, message.params.arguments || {}));
       }
@@ -192,7 +219,7 @@ export class CanvasController {
       const upstream = this.session ? await this.session.forward(message) : await forward(message, this.options);
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.5.0' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.6.0' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }
@@ -206,6 +233,7 @@ export class CanvasController {
     }
   }
   async close() {
+    await this.sessionBroker?.close();this.sessionBroker=null;
     await this.queue;
     await this.quiesceDocumentAgents();
     try { if (this.session) await this.session.close(); } finally {

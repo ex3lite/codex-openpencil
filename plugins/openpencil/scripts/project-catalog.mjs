@@ -31,11 +31,12 @@ async function canonicalRoot(path) {
 
 // Only an explicit root or roots supplied by the MCP host can establish ownership.
 // The bridge process cwd is never sufficient evidence of the user's project.
-export async function resolveProjectRoot({ projectRoot, roots, cwd } = {}) {
+export async function resolveProjectRoot({ projectRoot, roots, resolveRoots, cwd } = {}) {
   if (projectRoot !== undefined) {
     const root = await canonicalRoot(projectRoot);
     return { projectRoot: root, projectId: hash(root).slice(0, 24), source: 'explicit' };
   }
+  if (roots === undefined && resolveRoots) roots = await resolveRoots();
   if (roots !== undefined && !Array.isArray(roots)) fail('INVALID_PROJECT_ROOTS', 'Список папок проекта имеет неверный формат.');
   const candidates = [];
   for (const entry of roots || []) {
@@ -48,7 +49,7 @@ export async function resolveProjectRoot({ projectRoot, roots, cwd } = {}) {
     const root = await canonicalRoot(path);
     if (!candidates.includes(root)) candidates.push(root);
   }
-  if (!candidates.length) fail('PROJECT_ROOT_REQUIRED', 'Выберите папку проекта перед открытием холста. Папка запуска плагина не определяет проект.');
+  if (!candidates.length) fail('PROJECT_ROOT_REQUIRED', 'Codex не передал папку текущего чата. Откройте холст из сообщения в чате проекта.');
   let selected = candidates;
   if (selected.length > 1 && cwd) {
     let current;

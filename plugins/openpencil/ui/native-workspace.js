@@ -79,7 +79,7 @@ const nativeWorkspace = (() => {
       // One explicit user action produces one message. An uncertain send is not replayed.
       try {
         const result = await nativeBridge.request('ui/message', { role: 'user', content: [{ type:'text', text:
-          `Комментарий OpenPencil ${comment.id}\n${JSON.stringify(comment)}\nПрочитай canvas_comments. Измени только закреплённые слои; при изменившейся версии проверь их перед правкой. После проверки отметь комментарий выполненным.` }] });
+          `Комментарий OpenBrush ${comment.id}\n${JSON.stringify(comment)}\nПрочитай canvas_comments. Измени только закреплённые слои; при изменившейся версии проверь их перед правкой. После проверки отметь комментарий выполненным.` }] });
         if (result?.isError) throw Error('Codex не принял сообщение');
         await nativeEditor.call('canvas_comment_update', { commentId: comment.id, status:'sent' });
         nativeEditor.status('Комментарий передан в этот чат.');

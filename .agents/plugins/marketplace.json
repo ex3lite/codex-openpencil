@@ -1,7 +1,7 @@
 {
   "name": "zseven-openpencil",
   "interface": {
-    "displayName": "OpenPencil · Русская версия"
+    "displayName": "OpenBrush"
   },
   "plugins": [
     {

@@ -1,18 +1,32 @@
-# Project workspaces in 0.5
+# OpenBrush project workspaces in 0.6
 
-The original Rust/CanvasKit editor runs inside the Codex MCP App. Codex owns the
-conversation and model; no second provider is configured in the canvas.
+OpenBrush runs the original OpenPencil Rust/CanvasKit editor inside the Codex MCP
+App. Codex owns the conversation and model; no second provider is configured in
+the canvas.
+
+OpenBrush is the fork's visible product name. Internal plugin and MCP identifiers,
+`.openpencil/` project paths and the `.op` file format remain compatible with OpenPencil.
 
 ## Open and switch documents
 
-Call `open_canvas` with the current Codex workspace's absolute `projectRoot` and,
+The agent resolves the current chat's working directory automatically. It calls
+`open_canvas` with that absolute `projectRoot` and,
 optionally, a registered `documentId` or an in-project `.op` file. Omitting both
 document selectors creates a new project draft. Calling the opener again in the
 same session returns its current canvas. To switch, use the project menu or
 `canvas_document_open` after flushing the editor snapshot.
 
+The App joins the exact owner session identified in its opening tool result. A
+standalone panel without that result creates a short-lived connection request,
+publishes its `launchId` as App context, and sends one message to the current chat.
+The agent passes the same `launchId` and the chat's working directory to
+`open_canvas`. No folder picker, global last-project lookup, or process working
+directory fallback is used. Hosts that advertise MCP roots can supply one root;
+multiple roots require the agent's explicit current-chat directory.
+
 The project owns `.openpencil/catalog.json`, recovery files and comment journals.
-External files must be explicitly imported as copies into `designs/`. The original
+New saves and explicitly imported copies go directly into the project folder.
+The original
 file is preserved. Saves reject external modifications and existing Save As
 destinations. Code panel results must belong to the captured project and document.
 

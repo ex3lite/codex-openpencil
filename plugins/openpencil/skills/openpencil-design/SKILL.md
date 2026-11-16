@@ -1,11 +1,11 @@
 ---
 name: openpencil-design
-description: Create or edit editable .op UI designs with the Codex OpenPencil plugin, including layout inspection, PNG previews, and verified saves. Use for OpenPencil or OP/op design requests such as “用op设计” or “用 OP 修改选中元素”, not generic frontend implementation.
+description: Create or edit editable .op UI designs with OpenBrush, the local OpenPencil fork for Codex. Use for OpenBrush, OpenPencil or OP/op canvas requests, including project setup, editable layers, previews and verified saves.
 ---
 
-# Design with OpenPencil
+# Design with OpenBrush
 
-Recognize “OP” and “op” as OpenPencil in requests for UI design, canvas edits
+Recognize “OP” and “op” as OpenBrush in requests for UI design, canvas edits
 or .op files, including “用op设计一个单页 APP”. Open or reuse this plugin's
 conversation canvas; export to code only when the user requests implementation.
 
@@ -15,10 +15,17 @@ content and use the user's chosen file, page, selection, and reference.
 For connection failures, see [setup](../openpencil-setup/SKILL.md).
 
 For an interactive canvas in Codex, call `open_canvas` and use its MCP App
-thread entrypoint. On first open pass `projectRoot` equal to the current Codex
+thread entrypoint. Automatically pass `projectRoot` equal to the current Codex
 workspace root and optionally an existing in-project `filePath` or registered
 `documentId`. Never infer a global latest document. `canvas_documents` lists only
 this project; external files require explicit `canvas_document_import` as a copy.
+Do not ask the user to choose another project folder. Save new `.op` files directly
+in this chat's workspace unless the user chose another path. If App context contains
+`openBrushLaunch`, pass its `launchId` to `open_canvas`. This connects that exact
+waiting panel to the current chat's canvas. With no active session, read this
+project's `.openpencil/catalog.json` and reuse the requested registered document;
+do not create an empty draft over an existing design. An opening request may also
+carry the launch ID as a connection code when the host cannot publish App context.
 The original Rust editor runs directly inside that panel;
 Codex remains the only chat and model connection. Pass the chosen existing
 file, or omit the path for a new document. Verify `canvas_status` and

@@ -82,7 +82,7 @@ export async function bindProject(controller, { projectRoot, documentId, filePat
   if (documentId && filePath) throw fail('DOCUMENT_SELECTION_AMBIGUOUS', 'Укажите документ из списка или путь к файлу.');
   const catalog = existing || await ProjectCatalog.open({
     projectRoot: projectRoot ?? controller.options?.projectRoot,
-    roots: controller.options?.roots, cwd: controller.options?.cwd,
+    roots: controller.options?.roots, resolveRoots: controller.options?.resolveRoots, cwd: controller.options?.cwd,
   });
   let selection;
   if (!documentId) {
@@ -122,7 +122,7 @@ export function attachProjectSession(controller) {
   session.save = async (args = {}) => {
     const catalog = requireProject(controller);
     await assertCurrentWriter(controller);
-    const requested = args.filePath || session.source || join(catalog.projectRoot, 'designs', `untitled-${controller.documentId.slice(0, 8)}.op`);
+    const requested = args.filePath || session.source || join(catalog.projectRoot, `untitled-${controller.documentId.slice(0, 8)}.op`);
     let path = await catalog.validateSavePath(requested);
     if (!args.filePath && session.source && path !== session.source) throw fail('SOURCE_PATH_CHANGED', 'Путь исходного файла изменился. Выберите новый путь сохранения явно.');
     const { documents } = await catalog.listDocuments();
@@ -245,7 +245,7 @@ export async function importProjectDocument(controller, { sourcePath, filePath, 
   if (typeof sourcePath !== 'string') throw fail('INVALID_DOCUMENT_PATH', 'Выберите исходный файл .op для импорта.');
   let destination = filePath;
   if (!destination) {
-    destination = join(catalog.projectRoot, 'designs', basename(sourcePath));
+    destination = join(catalog.projectRoot, basename(sourcePath));
     await catalog.validateSavePath(destination);
     try {
       await lstat(destination);

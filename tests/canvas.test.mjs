@@ -59,7 +59,7 @@ test('A managed canvas routes all tools to the same daemon and protects save_doc
   t.after(() => controller.close());
   const calls = [];
   controller.session = { source: '/example.op', draft: '/recovery.op', version: '0.8.5', port: 1234, token: 'private-lifecycle-token',
-    assertLive() {}, close: async () => {}, save: async args => { calls.push(['save', args]); return { filePath: args.filePath }; },
+    assertLive() {}, document:async()=>({version:3}), close: async () => {}, save: async args => { calls.push(['save', args]); return { filePath: args.filePath }; },
     forward: async message => { calls.push(['forward',message]); return { jsonrpc:'2.0',id:message.id,result:{ tools:[], content:[{type:'text',text:'native'}] } }; } };
   const call = (name,args={}) => controller.dispatch({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}});
   const native = await call('batch_design', { script:'example' });
@@ -71,6 +71,7 @@ test('A managed canvas routes all tools to the same daemon and protects save_doc
   assert.equal(result.result.isError, true);
   assert.equal(calls.length,2);
   const opened = await call('open_canvas');
+  assert.equal(opened.result.structuredContent.version,3);
   const browser = await call('canvas_open_browser');
   assert.equal(browser.result.structuredContent.panelUrl, opened.result.structuredContent.panelUrl);
   assert.ok(!JSON.stringify(opened.result.structuredContent).includes('private-lifecycle-token'));

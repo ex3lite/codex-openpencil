@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "openpencil",
-  "version": "0.5.0",
-  "description": "Локальные редактируемые макеты OpenPencil в Codex. Русская версия.",
+  "version": "0.6.0",
+  "description": "OpenBrush — локальные редактируемые макеты в Codex на русском языке.",
   "author": {
     "name": "ZSeven-W",
     "url": "https://github.com/ZSeven-W"
@@ -21,9 +21,9 @@
       "requires_local_executor": true,
       "onboardingSkill": "./skills/openpencil-setup/SKILL.md",
       "interface": {
-        "displayName": "OpenPencil · Русская версия",
-        "shortDescription": "Редактируйте локальные макеты вместе с Codex",
-        "longDescription": "Русская версия локального редактора OpenPencil для Codex. Холст, редактируемые слои, выделение и сохранение .op работают на вашем компьютере. Для русского интерфейса подключите локализованный runtime из README.ru.md. Требуется Node.js 22+ и локальное выполнение. Модель Codex использует обычное подключение и лимиты вашего аккаунта.",
+        "displayName": "OpenBrush",
+        "shortDescription": "Создавайте и редактируйте макеты в OpenBrush с Codex",
+        "longDescription": "OpenBrush — локальный редактор макетов для Codex на базе OpenPencil с русским интерфейсом. Холст, редактируемые слои, выделение и сохранение .op работают на вашем компьютере. Для русского интерфейса подключите локализованный runtime из README.ru.md. Требуется Node.js 22+ и локальное выполнение. Модель Codex использует обычное подключение и лимиты вашего аккаунта.",
         "developerName": "ex3lite / ZSeven-W",
         "category": "Design",
         "capabilities": [
@@ -35,9 +35,9 @@
         ],
         "websiteURL": "https://github.com/ex3lite/codex-openpencil",
         "defaultPrompt": [
-          "Открой редактируемый холст OpenPencil для этого чата.",
-          "Создай макет приложения на русском.",
-          "Проверь и улучши выбранный фрейм OpenPencil."
+          "Открой редактируемый холст OpenBrush для этого чата.",
+          "Создай макет приложения на русском в OpenBrush.",
+          "Проверь и улучши выбранный фрейм OpenBrush."
         ],
         "brandColor": "#CFB537",
         "composerIcon": "./assets/icon.png",

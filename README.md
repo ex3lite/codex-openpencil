@@ -1,17 +1,23 @@
 <p align="center">
-  <img src="./plugins/openpencil/assets/icon.png" alt="OpenPencil" width="120" />
+  <img src="./plugins/openpencil/assets/icon.png" alt="OpenBrush" width="120" />
 </p>
 
-<h1 align="center">Codex OpenPencil</h1>
+<h1 align="center">OpenBrush for Codex</h1>
 
 <p align="center">
-  <strong>The Codex plugin for OpenPencil — create, inspect, and refine editable <code>.op</code> designs from a conversation.</strong><br />
+  <strong>A local OpenPencil fork for Codex — create, inspect, and refine editable <code>.op</code> designs from a conversation.</strong><br />
   <sub>One-Prompt Setup &bull; Interactive Canvas &bull; Selection Prompts &bull; Native Rust Engine</sub>
 </p>
 
 <p align="center">
-  <a href="./README.md"><b>English</b></a> · <a href="./README.zh.md">简体中文</a>
+  <a href="./README.ru.md"><b>Русский — OpenBrush 0.6</b></a> · <a href="./README.md">English</a> · <a href="./README.zh.md">简体中文</a>
 </p>
+
+This fork is named **OpenBrush**. Version 0.6 binds its native Codex panel to the
+current chat's project automatically and saves `.op` files directly in that folder.
+See the [fork setup](./README.ru.md) and [workspace behavior](./docs/workspace.md).
+The upstream installation and release references below describe OpenPencil;
+internal plugin identifiers remain compatible.
 
 <p align="center">
   <a href="https://github.com/ZSeven-W/codex-openpencil/releases/latest"><img src="https://img.shields.io/github/v/release/ZSeven-W/codex-openpencil?color=cfb537" alt="Release" /></a>

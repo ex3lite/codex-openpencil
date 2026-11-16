@@ -12,7 +12,7 @@ iframe { border:0; width:100%; height:100vh; min-height:600px; display:block; }
 #launcher button:disabled { opacity:.5; cursor:wait; }
 #launcher input { box-sizing:border-box; width:100%; margin:8px 0; padding:8px; border:1px solid currentColor; border-radius:6px; color:inherit; background:transparent; font:12px monospace; }
 [hidden] { display:none!important; }
-</style></head><body><div id="notice" role="status">Подключение к холсту OpenPencil…</div><section id="launcher" hidden><h1>OpenPencil</h1><p id="launch-help">Codex откроет этот редактируемый холст во встроенном браузере текущего чата.</p><button id="open-canvas" disabled>Открыть в Codex</button><p>Выделите элемент и опишите правку в текущем чате. Для реализации нажмите «Сгенерировать» в панели кода и напишите в чате «Продолжи реализацию».</p><details id="copy-fallback"><summary>Или скопируйте команду открытия</summary><input id="canvas-url" aria-label="Команда открытия холста в Codex" readonly><button id="copy-canvas">Скопировать команду</button></details><p id="launch-status" role="status" aria-live="polite"></p></section><iframe id="panel" title="OpenPencil Canvas" hidden allow="clipboard-read; clipboard-write; local-fonts"></iframe><script>
+</style></head><body><div id="notice" role="status">Подключение к холсту OpenBrush…</div><section id="launcher" hidden><h1>OpenBrush</h1><p id="launch-help">Codex откроет этот редактируемый холст во встроенном браузере текущего чата.</p><button id="open-canvas" disabled>Открыть в Codex</button><p>Выделите элемент и опишите правку в текущем чате. Для реализации нажмите «Сгенерировать» в панели кода и напишите в чате «Продолжи реализацию».</p><details id="copy-fallback"><summary>Или скопируйте команду открытия</summary><input id="canvas-url" aria-label="Команда открытия холста в Codex" readonly><button id="copy-canvas">Скопировать команду</button></details><p id="launch-status" role="status" aria-live="polite"></p></section><iframe id="panel" title="OpenBrush Canvas" hidden allow="clipboard-read; clipboard-write; local-fonts"></iframe><script>
 const pending = new Map();
 let nextId = 1, panelOrigin, hostCapabilities = {}, opened = false;
 let hostTheme, hostThemeChanged = false;
@@ -28,7 +28,7 @@ const codegenRequests = new Set();
 const openingRequests = new Set();
 
 function openingPrompt(url = launchUrl) {
-  return `Открой этот существующий холст OpenPencil во встроенном браузере Codex в текущем чате:\n${url}\nИспользуй browser target инструмента open_in_codex или @Browser, сохрани адрес целиком вместе с фрагментом. Не запускай системный браузер, не создавай заново и не изменяй макет. После открытия подтверди подключение к холсту.`;
+  return `Открой этот существующий холст OpenBrush во встроенном браузере Codex в текущем чате:\n${url}\nИспользуй browser target инструмента open_in_codex или @Browser, сохрани адрес целиком вместе с фрагментом. Не запускай системный браузер, не создавай заново и не изменяй макет. После открытия подтверди подключение к холсту.`;
 }
 function updateOpeningPrompt() {
   if (launchUrl) document.getElementById('canvas-url').value = openingPrompt().replace(/\n/g, ' ');
@@ -176,7 +176,7 @@ window.addEventListener('message', event => {
   if (message.method === 'ui/resource-teardown') window.parent.postMessage({jsonrpc:'2.0',id:message.id,result:{}},'*');
 });
 (async()=>{
-  const initialized=await request('ui/initialize',{protocolVersion:'2026-01-26',appInfo:{name:'OpenPencil Canvas',version:'0.3.13'},appCapabilities:{availableDisplayModes:['inline','fullscreen']}});
+  const initialized=await request('ui/initialize',{protocolVersion:'2026-01-26',appInfo:{name:'OpenBrush Canvas',version:'0.3.13'},appCapabilities:{availableDisplayModes:['inline','fullscreen']}});
   hostCapabilities=initialized.hostCapabilities||{};
   // A notification received during initialization is newer than its response.
   if (!hostThemeChanged) acceptHostTheme(initialized.hostContext?.theme);

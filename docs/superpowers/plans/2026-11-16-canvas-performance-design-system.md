@@ -11,7 +11,7 @@ Measure the native editor and Codex bridge separately, fix demonstrated hot path
 - [x] Add foundations and UI Kit to the existing Apple-style document. Four product buttons use canonical linked refs; five state samples use the same master. Preserve intentional artwork and layout.
 - [x] Verify token/master propagation, per-instance interaction state, focus, disabled visuals, reduced motion, geometric centering, autosave and reopen on isolated fixtures. Inspect all three native page renders.
 - [x] Run package checks, full plugin tests, relevant Rust suites, native/WASM builds and isolated MCP smoke. Package the new runtime.
-- [ ] Install the new plugin and verify fresh Codex tool/resource discovery.
+- [x] Install the new plugin and verify fresh Codex tool/resource discovery: 0.12.0, 59 tools, new resource URI, all 89 installed files match source.
 
 ## Measured results
 - Warm same-content fit frame: 237 ms before, 13 ms after (319 text draw calls in each). These are instrumented CanvasKit paint/flush durations, not end-to-end FPS.

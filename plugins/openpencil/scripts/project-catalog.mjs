@@ -4,6 +4,8 @@ import { lstat, mkdir, open, realpath, rename, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { durableWrite } from './atomic-files.mjs';
+
 const DIRECTORY = '.openpencil';
 const MAX_DOCUMENT_BYTES = 32 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
@@ -193,16 +195,7 @@ export class ProjectCatalog {
   }
 
   async atomicWrite(path, bytes) {
-    const temporary = join(dirname(path), `.${basename(path)}-${randomUUID()}.tmp`);
-    let handle;
-    try {
-      handle = await open(temporary, 'wx', 0o600);
-      await handle.writeFile(bytes); await handle.sync(); await handle.close(); handle = null;
-      await rename(temporary, path);
-    } finally {
-      if (handle) await handle.close();
-      await rm(temporary, { force: true });
-    }
+    await durableWrite(path, bytes);
   }
 
   async mutate(change) {

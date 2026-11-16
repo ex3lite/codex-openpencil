@@ -117,12 +117,17 @@ export function attachProjectSession(controller) {
     requireProject(controller);
     await assertCurrentWriter(controller);
     const result = await checkpoint();
-    return saving ? result : persistRecovery(controller, result);
+    if (saving) return result;
+    const recovery = await persistRecovery(controller, result);
+    controller.persistence?.changed();
+    return recovery;
   };
   session.save = async (args = {}) => {
     const catalog = requireProject(controller);
     await assertCurrentWriter(controller);
-    const requested = args.filePath || session.source || join(catalog.projectRoot, `untitled-${controller.documentId.slice(0, 8)}.op`);
+    const entry = await catalog.getDocument(controller.documentId);
+    const title = entry.name === 'Без названия' ? 'untitled' : entry.name.replace(/\.op$/i, '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').slice(0, 100);
+    const requested = args.filePath || session.source || join(catalog.projectRoot, `${title || 'untitled'}-${controller.documentId.slice(0, 8)}.op`);
     let path = await catalog.validateSavePath(requested);
     if (!args.filePath && session.source && path !== session.source) throw fail('SOURCE_PATH_CHANGED', 'Путь исходного файла изменился. Выберите новый путь сохранения явно.');
     const { documents } = await catalog.listDocuments();
@@ -148,7 +153,7 @@ export async function projectDocuments(controller) {
     ...(controller.projectSwitchUncertain ? { switchUncertain: true } : {}) };
 }
 
-async function writeReplacement(controller, document, baseVersion) {
+export async function writeReplacement(controller, document, baseVersion) {
   const session = controller.session;
   const body = JSON.stringify({ document: liveDocument(document), baseVersion,
     activePageIndex: document.editorMeta?.activePageIndex ?? 0,
@@ -164,15 +169,16 @@ async function writeReplacement(controller, document, baseVersion) {
     value = await response.json();
   } catch {
     controller.projectSwitchUncertain = true;
+    controller.persistence?.fail(unknownSwitch());
     throw unknownSwitch();
   }
   if (response.status === 409) throw fail('VERSION_CONFLICT', 'Холст изменился во время переключения. Обновите документ и выберите его заново.');
   if (!response.ok || value.ok !== true) {
-    if (response.status >= 500) { controller.projectSwitchUncertain = true; throw unknownSwitch(); }
+    if (response.status >= 500) { controller.projectSwitchUncertain = true; controller.persistence?.fail(unknownSwitch()); throw unknownSwitch(); }
     throw fail('DOCUMENT_SWITCH_REJECTED', 'Редактор отклонил переключение документа. Текущий документ остаётся закреплён за проектом.');
   }
   if (!Number.isSafeInteger(value.version) || value.version < baseVersion) {
-    controller.projectSwitchUncertain = true; throw unknownSwitch();
+    controller.projectSwitchUncertain = true; controller.persistence?.fail(unknownSwitch()); throw unknownSwitch();
   }
   return value.version;
 }
@@ -199,6 +205,7 @@ export async function switchProjectDocument(controller, { documentId, create = f
       target = await catalog.reopenDocument(documentId);
       document = validateDocument(await sourceBytes(target.filePath));
     }
+    await controller.persistence?.boundary();
     await session.checkpoint();
     if (create) {
       const entry = await catalog.registerDocument({ name }); documentId = entry.id;
@@ -229,13 +236,14 @@ export async function detachProjectDocument(controller, { name } = {}) {
   await assertCurrentWriter(controller);
   if (controller.quiesceDocumentAgents) await controller.quiesceDocumentAgents();
   else await assertNoAgents(controller);
+  await controller.persistence?.boundary();
   await session.checkpoint();
   const entry = await controller.project.registerDocument({ name });
   await acquireWriter(controller, controller.project, entry.id);
   const previousId = controller.documentId;
   controller.documentId = entry.id; session.source = null; session.baseline = null; session.selectionSnapshot = null;
   controller.projectBinding = { initialFilePath: null, sourcePath: null, baseline: null, documentId: entry.id };
-  try { await controller.resetDocumentServices?.(); }
+  try { await controller.resetDocumentServices?.({ deferPersistence: true }); }
   finally { await releaseWriter(controller, previousId); }
   return { filePath: null, documentId: entry.id, project: projectSummary(controller) };
 }

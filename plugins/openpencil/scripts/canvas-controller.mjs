@@ -8,8 +8,12 @@ import { startCanvasAgentBroker, callCanvasAgent } from './canvas-agent-broker.m
 import { startCanvasSessionBroker, callCanvasSession } from './canvas-session-broker.mjs';
 import { prepareCanvasLaunch, publishCanvasLaunch, pollCanvasLaunch } from './canvas-launch.mjs';
 import { workspaceTools } from './canvas-workspace-tools.mjs';
+import { communityTools, dispatchCommunityTool, communityAssetFile } from './community-assets.mjs';
 import { bindProject, attachProjectSession, projectSummary, projectDocuments, switchProjectDocument, detachProjectDocument, importProjectDocument } from './canvas-projects.mjs';
-import { EditorSession } from './editor-session.mjs';
+import { EditorSession, validateDocument } from './editor-session.mjs';
+import { CanvasPersistence } from './canvas-persistence.mjs';
+import { writeReplacement } from './canvas-projects.mjs';
+import { snapshotMatches } from './document-format.mjs';
 import { startPanel } from './canvas-panel.mjs';
 import { forward, errorReply } from './transport.mjs';
 import { readCanvasSelection } from './canvas-selection.mjs';
@@ -26,6 +30,7 @@ export const canvasTools = [
   {name:'canvas_session_call',description:'App-only: route a canvas operation to the exact session returned by this chat opening OpenBrush. Never selects a global latest document.',
     inputSchema:{...schema({projectRoot:{type:'string'},sessionId:{type:'string'},name:{type:'string'},arguments:{type:'object'}}),required:['projectRoot','sessionId','name']},
     annotations:{destructiveHint:false,openWorldHint:false},_meta:{ui:{visibility:['app']}}},
+  ...communityTools,
   ...workspaceTools,
   { name: 'canvas_detach_source', description: 'App-only: detach the previous save destination after a successful New/Open/import. Does not write or delete any file.',
     inputSchema: schema({}), annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
@@ -45,11 +50,20 @@ export const canvasTools = [
     annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: 'canvas_selection', description: 'Read the current managed canvas selection: exact node IDs, names, types, parents, active page and document version. Call before modifying selected elements from a chat prompt; read these nodes with batch_get, then edit only their subtrees. Empty selection means no target, never the entire page.',
     inputSchema: schema({}), annotations: { readOnlyHint: true, openWorldHint: false } },
-  { name: 'canvas_import_image', description: 'Embed a local PNG/JPEG/WebP (at most 8 MiB) into an existing image node in the managed canvas. Reads file bytes directly without putting base64 in chat. Requires the current document version and active page; preserves node ID, geometry and unrelated nodes. Clears acquisition hints after import. Does not generate images, call a provider, or save the source .op. After import inspect the native preview, canvas_save and verify reopen; never automatically retry an uncertain write.',
+  { name: 'canvas_import_image', description: 'Embed a local PNG/JPEG/WebP (at most 8 MiB) into an existing image node in the managed canvas. Reads file bytes directly without putting base64 in chat. Requires the current document version and active page; preserves node ID, geometry and unrelated nodes. Clears acquisition hints after import. Does not generate images, call a provider, or save the source .op. After import inspect the native preview and verify autosave; never automatically retry an uncertain write.',
     inputSchema: { ...schema({ filePath: { type: 'string', description: 'Absolute path to a local image asset.' },
       nodeId: { type: 'string', minLength: 1 }, pageId: { type: 'string', minLength: 1 },
       expectedVersion: { type: 'integer', minimum: 0 } }), required: ['filePath', 'nodeId', 'pageId', 'expectedVersion'] },
     annotations: { destructiveHint: true, openWorldHint: false }, _meta: { ui: { visibility: ['model'] } } },
+  { name: 'canvas_autosave', description: 'Persist the synchronized active canvas to its project .op file automatically. Never retries a failed write.',
+    inputSchema: schema({ docJson: { type: 'string' } }), annotations: { destructiveHint: false, openWorldHint: false } },
+  { name: 'canvas_history', description: 'List immutable versions of the active project document, newest first.',
+    inputSchema: schema({}), annotations: { readOnlyHint: true, openWorldHint: false } },
+  { name: 'canvas_history_status', description: 'Read autosave and version history status for the active document.',
+    inputSchema: schema({}), annotations: { readOnlyHint: true, openWorldHint: false } },
+  { name: 'canvas_history_restore', description: 'Restore a version of this document and preserve the current canvas as a new history entry. Requires the synchronized current snapshot.',
+    inputSchema: { ...schema({ id: { type: 'string' }, docJson: { type: 'string' } }), required: ['id', 'docJson'] },
+    annotations: { destructiveHint: true, openWorldHint: false } },
   { name: 'canvas_save', description: 'Save the managed canvas to its original path or a new absolute .op path. Refuses external changes or an existing Save As destination. UI must flush its snapshot first; never automatically retry.',
     inputSchema: schema({ filePath, docJson: { type: 'string', description: 'UI-only flushed document snapshot, used to reject stale saves.' } }),
     annotations: { destructiveHint: true, openWorldHint: false } },
@@ -115,7 +129,13 @@ export class CanvasController {
       token: this.session.token, panelUrl: panel.url } } };
   }
   recoveryPath() { return this.project ? join(this.project.recoveryDirectory,this.documentId+'.op') : this.session.draft; }
-  async resetDocumentServices() {
+  async resetDocumentServices({ deferPersistence = false } = {}) {
+    this.persistence?.dispose();
+    this.persistence = new CanvasPersistence(this);
+    this.session.persistence = this.persistence;
+    if (!deferPersistence) {
+      try { await this.persistence.initialize(); } catch { /* Status exposes the stopped autosave without discarding recovery. */ }
+    }
     await this.quiesceDocumentAgents();
     this.codegenJob=null;
     this.agents=new CanvasAgents({session:this.session});
@@ -154,7 +174,12 @@ export class CanvasController {
     if (name === 'canvas_native_request') return nativeRequest(this,args);
     if (name === 'open_canvas' || name === 'canvas_open_browser') return this.open(args);
     if (!this.session) throw new Error('Open a managed canvas with canvas_open_browser or open_canvas first.');
-    if(this.projectSwitchUncertain && !['canvas_status','canvas_selection','canvas_documents','canvas_comments','canvas_agents'].includes(name)) throw Error('Переключение макета не подтверждено. Изменения остановлены; откройте сохранённый проект заново.');
+    if(this.projectSwitchUncertain && !['canvas_status','canvas_selection','canvas_documents','canvas_comments','canvas_agents','canvas_history','canvas_history_status'].includes(name)) throw Error('Переключение макета не подтверждено. Изменения остановлены; откройте сохранённый проект заново.');
+    if(name==='canvas_autosave') return toolResult(await this.persistence.flush(args));
+    if(name==='canvas_history' || name==='canvas_history_status') return toolResult(await this.persistence.list());
+    if(name==='canvas_history_restore') return toolResult(await this.restoreHistory(args));
+    if(name==='canvas_community_file') return communityAssetFile(this,args);
+    if(name.startsWith('canvas_community_')) return toolResult(await dispatchCommunityTool(this,name,args));
     if(name==='canvas_documents') return toolResult(await projectDocuments(this));
     if(name==='canvas_document_open') return toolResult(await switchProjectDocument(this,args));
     if(name==='canvas_document_import') return toolResult(await importProjectDocument(this,args));
@@ -166,7 +191,10 @@ export class CanvasController {
     if (name === 'canvas_prepare_browser') return toolResult(prepareCanvasBrowser(this, args));
     if (name === 'canvas_launch_status') return toolResult(browserLaunchStatus(this, args));
     if (name === 'canvas_launch_ready') return toolResult(browserLaunchStatus(this, args, true));
-    if (name === 'canvas_import_image') return toolResult(await importCanvasImage(this.session, args));
+    if (name === 'canvas_import_image') {
+      const imported = await importCanvasImage(this.session, args); this.persistence?.changed();
+      return toolResult(imported);
+    }
     if (name === 'canvas_detach_source') {
       if(this.project) return toolResult(await detachProjectDocument(this));
       this.session.source = null; this.session.baseline = null; this.codegenJob = null;
@@ -181,7 +209,22 @@ export class CanvasController {
     if (name === 'canvas_codegen_poll') return toolResult(pollCodegen(this, args));
     const current = await readCanvasSelection(this.session);
     return toolResult({ filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
-      project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,agents:this.agents?.status(),comments:this.comments?await this.comments.list():[] });
+      project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,autosave:this.persistence?.status(),agents:this.agents?.status(),comments:this.comments?await this.comments.list():[] });
+  }
+  async restoreHistory({ id, docJson } = {}) {
+    if (this.agents?.status().agents.length) throw Error('Finish active agents before restoring history.');
+    const live = await this.session.document();
+    if (typeof docJson !== 'string' || !snapshotMatches(validateDocument(docJson), live)) {
+      throw Object.assign(new Error('Synchronize the current canvas before restoring history.'), { code: 'DOCUMENT_SNAPSHOT_STALE' });
+    }
+    const selected = await this.persistence.history.read(id);
+    await this.persistence.boundary();
+    const version = await writeReplacement(this, validateDocument(selected.bytes), live.version);
+    this.session.selectionSnapshot = null;
+    await this.persistence.flush({ source: 'restore', restoredFrom: id, forceHistory: true });
+    return { filePath: this.session.source, recoveryPath: this.recoveryPath(), version,
+      documentId: this.documentId, project: projectSummary(this), autosave: this.persistence.status(),
+      history: await this.persistence.list() };
   }
   async resource() {
     return { contents: [{ uri: CANVAS_URI, mimeType: 'text/html;profile=mcp-app', text: await (this.options.nativeHtmlLoader ? this.options.nativeHtmlLoader() : nativeHtml(this.options.runtimeRoot)),
@@ -217,9 +260,10 @@ export class CanvasController {
       }
       if(!this.session && !this.options.port && message.method==='tools/call') throw Error('Сначала откройте холст с open_canvas(projectRoot). Глобальный случайный документ не выбран.');
       const upstream = this.session ? await this.session.forward(message) : await forward(message, this.options);
+      if (this.session && message.method === 'tools/call' && !upstream?.error && !upstream?.result?.isError) this.persistence?.changed();
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.6.0' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.7.0' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }
@@ -236,6 +280,10 @@ export class CanvasController {
     await this.sessionBroker?.close();this.sessionBroker=null;
     await this.queue;
     await this.quiesceDocumentAgents();
+    if (this.persistence && !this.projectSwitchUncertain) {
+      try { await this.persistence.boundary(); } catch { /* Keep recovery and stopped status on shutdown. */ }
+    }
+    this.persistence?.dispose();
     try { if (this.session) await this.session.close(); } finally {
       try { await this.releaseProjectLease?.(); } finally { if (this.panel) await this.panel.close(); }
     }

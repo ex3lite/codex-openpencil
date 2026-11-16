@@ -1,4 +1,4 @@
-# OpenBrush project workspaces in 0.6
+# OpenBrush project workspaces in 0.7
 
 OpenBrush runs the original OpenPencil Rust/CanvasKit editor inside the Codex MCP
 App. Codex owns the conversation and model; no second provider is configured in
@@ -77,3 +77,16 @@ codegen binding. Isolated Rust smoke tests cover native edits, PNG, save and reo
 The local MCP App harness verifies UI transport and rendered controls. It does not
 prove that a particular Codex release expands its native panel correctly; perform
 that acceptance in the actual host after it loads the new plugin version.
+
+## Autosave and history
+
+Edits from the native UI and agent tools save automatically to a root-level `.op` file.
+The History drawer keeps immutable snapshots grouped after two seconds of idle edits,
+up to 50 snapshots / 128 MiB per document. Restoring preserves current work first.
+External file changes or uncertain writes stop persistence visibly.
+
+## Community library
+
+The Library drawer searches downloaded assets and sends explicit discovery requests
+to this Codex chat. Follow the [Community workflow](../plugins/openpencil/skills/openpencil-design/references/community.md).
+SVG imports as editable vectors; `.fig` uses the original Rust editor file importer. Complex-file fidelity depends on that importer.

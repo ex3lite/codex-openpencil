@@ -75,6 +75,18 @@ For image slots, search fallback and local-asset import, read the
 [image workflow](references/images.md). Images are assets within editable UI;
 keep text, controls and layout as native nodes.
 
+## Community assets and references
+
+When a brief needs reusable icons, UI kits or references, search the project’s
+local dataset with `canvas_community_search`, then use host web search for public
+Figma Community discovery when needed. Read the [Community asset workflow](references/community.md)
+before acquisition. Preserve author/source/license metadata, use supported public
+upstream downloads or authorized local exports, and import by asset ID. Never use
+a numeric Community ID as a REST file key or scrape private session endpoints.
+`canvas_community_seed` installs licensed Lucide SVGs locally. Library `.fig`
+imports reuse the native Rust Figma parser; inspect conversion warnings and
+visual fidelity before claiming a faithful editable kit.
+
 ## Build and edit
 
 For prompts such as “modify the selected elements”, call `canvas_selection` on

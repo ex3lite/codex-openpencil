@@ -6,6 +6,7 @@ import { stateRoot, sha256 } from './editor-runtime.mjs';
 import { ensureRuntime } from './runtime-install.mjs';
 import { post } from './transport.mjs';
 import { snapshotMatches, diskDocument } from './document-format.mjs';
+import { durableWrite } from './atomic-files.mjs';
 
 export function validateDocument(bytes) {
   const document = JSON.parse(bytes.toString());
@@ -30,20 +31,14 @@ export async function sourceBytes(path) {
 export async function atomicSave(path, bytes, baseline) {
   if (Buffer.byteLength(bytes) > 32 * 1024 * 1024) throw new Error('Saved document exceeds 32 MiB.');
   validateDocument(bytes);
-  if (baseline === null) {
-    // Save As never silently replaces a different existing document.
-    await writeFile(path, bytes, { flag: 'wx', mode: 0o600 });
-    return sha256(bytes);
-  }
-  if (sha256(await sourceBytes(path)) !== baseline) throw new Error('Source changed outside this canvas. Save was stopped; keep the recovery draft.');
-  const temp = join(dirname(path), `.${basename(path)}.codex-${randomUUID()}.tmp`);
-  try {
-    await writeFile(temp, bytes, { flag: 'wx', mode: 0o600 });
-    // Check again after staging, before replacing the source.
-    if (sha256(await sourceBytes(path)) !== baseline) throw new Error('Source changed while saving; save was stopped.');
-    await rename(temp, path);
-    return sha256(bytes);
-  } finally { await rm(temp, { force: true }); }
+  const verify = async () => {
+    if (baseline !== null && sha256(await sourceBytes(path)) !== baseline) {
+      throw Object.assign(new Error('Source changed outside this canvas. Autosave stopped; the recovery draft is preserved.'), { code: 'SOURCE_CHANGED' });
+    }
+  };
+  await verify();
+  await durableWrite(path, bytes, { exclusive: baseline === null, beforePublish: verify });
+  return sha256(bytes);
 }
 
 function handshake(child) {
@@ -119,7 +114,14 @@ export class EditorSession {
     return value;
   }
 
-  async forward(message) { this.assertLive(); return post(this.port, message); }
+  async forward(message) {
+    this.assertLive();
+    try { return await post(this.port, message); }
+    catch (error) {
+      if (message.method === 'tools/call') this.persistence?.fail(Object.assign(error, { code: 'UNCERTAIN_WRITE' }));
+      throw error;
+    }
+  }
 
   async selectionDocument(pageIndex) {
     this.assertLive();
@@ -137,9 +139,7 @@ export class EditorSession {
   async checkpoint() {
     const value = await this.document();
     const bytes = JSON.stringify(diskDocument(value)) + '\n';
-    const temp = join(this.dir, 'checkpoint.tmp');
-    await writeFile(temp, bytes, { mode: 0o600 });
-    await rename(temp, this.draft);
+    await durableWrite(this.draft, bytes);
     return { recoveryPath: this.draft, version: value.version };
   }
 

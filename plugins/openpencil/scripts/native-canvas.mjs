@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { resolveRuntime, sha256 } from './editor-runtime.mjs';
 
-export const NATIVE_URI='ui://openbrush/native/v0.6.0.html';
+export const NATIVE_URI='ui://openbrush/native/v0.7.0.html';
 const READ=new Set(['/api/mcp/document','/api/mcp/version','/api/mcp/server','/api/mcp/selection','/api/mcp/indicators']);
 const WRITE=new Set(['/api/mcp/document','/api/mcp/selection','/api/mcp/sync-reset']);
 export function nativeRoute(path,method='GET') {
@@ -20,10 +20,19 @@ export async function nativeRequest(controller,args) {
  if(!controller.session)await controller.open({});
  const session=controller.session;session.assertLive();
  if(typeof args.body==='string'&&Buffer.byteLength(args.body)>32*1024*1024)throw Error('Document request too large');
- const response=await fetch(`http://127.0.0.1:${session.port}${path}`,{method,redirect:'error',headers:{'X-OpenPencil-Token':session.token,'Content-Type':'application/json'},body:method==='POST'?(args.body||'{}'):undefined,signal:AbortSignal.timeout(15000)});
+ let response;
+ const uncertain=error=>{if(method==='POST'&&path==='/api/mcp/document'){controller.projectSwitchUncertain=true;controller.persistence?.fail(error);}return error;};
+ try {response=await fetch(`http://127.0.0.1:${session.port}${path}`,{method,redirect:'error',headers:{'X-OpenPencil-Token':session.token,'Content-Type':'application/json'},body:method==='POST'?(args.body||'{}'):undefined,signal:AbortSignal.timeout(15000)});}
+ catch(error){throw uncertain(Object.assign(new Error('Canvas write outcome is unknown. Reopen the saved project before continuing.'),{code:'UNCERTAIN_WRITE',cause:error}));}
+ if(response.status>=500&&method==='POST'&&path==='/api/mcp/document') uncertain(Object.assign(new Error('Canvas write outcome is unknown.'),{code:'UNCERTAIN_WRITE'}));
  const parts=[];let total=0;
- for await(const part of response.body){total+=part.length;if(total>32*1024*1024)throw Error('Editor response too large');parts.push(part);}
- if(method==='POST'&&path==='/api/mcp/document'&&response.ok)await session.checkpoint();
+ try {for await(const part of response.body){total+=part.length;if(total>32*1024*1024)throw Error('Editor response too large');parts.push(part);}}
+ catch(error){throw uncertain(error);}
+ if(method==='POST'&&path==='/api/mcp/document'&&response.ok){
+  let acknowledgement;try{acknowledgement=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{}
+  if(acknowledgement?.ok!==true||!Number.isSafeInteger(acknowledgement.version))throw uncertain(Object.assign(new Error('Canvas write acknowledgement is invalid.'),{code:'UNCERTAIN_WRITE'}));
+  await session.checkpoint();
+ }
  let bytes=Buffer.concat(parts);const type=response.headers.get('content-type')||'application/octet-stream';
  if(method==='GET'&&path==='/api/mcp/indicators'&&response.ok&&controller.agents) bytes=Buffer.from(JSON.stringify(controller.agents.relay(JSON.parse(bytes.toString('utf8')))));
  return {content:[{type:'text',text:JSON.stringify({status:response.status,bytes:bytes.length})}],_meta:{nativeHttp:{status:response.status,type,body:bytes.toString('base64')}}};
@@ -34,17 +43,17 @@ export function embedNativeScript(template, script) {
 let cached;
 export async function nativeHtml(runtimeRoot) {
  const runtime=await resolveRuntime(runtimeRoot);
- const [template,transport,bootstrap,engine,info,ck,wasm,ckWasm,host,editor,codegen,workspace,context,workspaceCss,launch]=await Promise.all([
+ const [template,transport,bootstrap,engine,info,ck,wasm,ckWasm,host,editor,codegen,workspace,context,workspaceCss,launch,library]=await Promise.all([
   readFile(new URL('../ui/native.html',import.meta.url),'utf8'),readFile(new URL('../ui/native-transport.js',import.meta.url),'utf8'),
   readFile(new URL('../ui/native-bootstrap.js',import.meta.url),'utf8'),readFile(new URL('../ui/native-engine.js',import.meta.url),'utf8'),
   readFile(new URL('../ui/native-engine.js.json',import.meta.url),'utf8'),readFile(join(runtime.canvasKit,'canvaskit.js'),'utf8'),
   readFile(join(runtime.webBundle,'op_host_web_bg.wasm')),readFile(join(runtime.canvasKit,'canvaskit.wasm')),
-  ...['native-host.js','native-editor.js','native-codegen.js','native-workspace.js','native-context.js','native-workspace.css','native-launch.js'].map(name=>readFile(new URL('../ui/'+name,import.meta.url),'utf8'))]);
+  ...['native-host.js','native-editor.js','native-codegen.js','native-workspace.js','native-context.js','native-workspace.css','native-launch.js','native-library.js'].map(name=>readFile(new URL('../ui/'+name,import.meta.url),'utf8'))]);
  if(JSON.parse(info).entrySha256!==sha256(await readFile(join(runtime.webBundle,'op_host_web.js')))||JSON.parse(info).engineSha256!==sha256(wasm))throw Error('Rebuild native editor glue for this runtime: node scripts/build-native-editor.mjs');
- const cacheKey=sha256(Buffer.from(template+transport+bootstrap+engine+host+editor+codegen+workspace+context+workspaceCss+launch));
+ const cacheKey=sha256(Buffer.from(template+transport+bootstrap+engine+host+editor+codegen+workspace+context+workspaceCss+launch+library));
  if(cached?.root===runtime.root&&cached.key===cacheKey)return cached.html;
  const binaries={engine:gzipSync(wasm).toString('base64'),canvaskit:gzipSync(ckWasm).toString('base64')};
- const script=`const OP_BINARIES=${JSON.stringify(binaries)};\n${host}\n${transport}\n${ck}\n${engine}\n${editor}\n${codegen}\n${workspace}\n${context}\n${launch}\n${bootstrap}`;
+ const script=`const OP_BINARIES=${JSON.stringify(binaries)};\n${host}\n${transport}\n${ck}\n${engine}\n${editor}\n${codegen}\n${workspace}\n${context}\n${launch}\n${library}\n${bootstrap}`;
  const html=embedNativeScript(template.replace('/* WORKSPACE_CSS */',workspaceCss),script);
  cached={root:runtime.root,key:cacheKey,html};return html;
 }

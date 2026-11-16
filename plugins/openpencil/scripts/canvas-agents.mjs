@@ -179,7 +179,9 @@ export class CanvasAgents {
       let result;
       try { result = await this.writeDocument(document, expectedVersion); }
       catch (error) {
-        if (!['VERSION_CONFLICT', 'WRITE_REJECTED', 'DOCUMENT_TOO_LARGE'].includes(error.code)) lease.uncertain = true;
+        if (!['VERSION_CONFLICT', 'WRITE_REJECTED', 'DOCUMENT_TOO_LARGE'].includes(error.code)) {
+          lease.uncertain = true; this.session.persistence?.fail(error);
+        }
         throw error;
       } finally { lease.inFlight = false; }
       this.advanceEpoch();

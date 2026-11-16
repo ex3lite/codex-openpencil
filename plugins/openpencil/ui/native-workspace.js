@@ -24,7 +24,7 @@ const nativeWorkspace = (() => {
   }
   function show(next, title) {
     mode = next; drawer.replaceChildren(); drawer.hidden = false; document.body.dataset.drawer = 'true';
-    const active = { projects:'project', context:'context', comment:'comment', comments:'comments', agents:'agents' }[next];
+    const active = { projects:'project', context:'context', comment:'comment', comments:'comments', agents:'agents', history:'history', library:'library' }[next];
     for (const b of document.querySelectorAll('#workspace-bar [aria-expanded]')) b.setAttribute('aria-expanded', String(b.id === `workspace-${active}`));
     const heading = make('div', null, 'drawer-heading'); heading.append(make('h2', title), button('Закрыть', close)); drawer.append(heading);
     window.dispatchEvent(new Event('resize'));
@@ -128,10 +128,32 @@ const nativeWorkspace = (() => {
     }
     drawer.append(make('h3', 'Импортировать копию'));
     const input = document.createElement('input'); input.placeholder = '/…/Макет.op'; input.setAttribute('aria-label','Путь к файлу для импорта');
-    drawer.append(input, make('p', 'Внешний файл будет скопирован в designs этого проекта. Исходник сохранится.'));
+    drawer.append(input, make('p', 'Внешний файл будет скопирован в папку этого проекта. Исходник сохранится.'));
     drawer.append(button('Добавить в проект', () => projectAction(async () => {
       await nativeEditor.call('canvas_document_import', { sourcePath:input.value.trim() }); await renderProjects();
     })));
+  }
+  async function renderHistory(sync = true) {
+    if(sync) {
+    const snapshot = await nativeEditor.flush();
+    await nativeEditor.call('canvas_autosave',{docJson:snapshot.docJson});
+    }
+    const history = await nativeEditor.call('canvas_history'); show('history','История изменений');
+    drawer.append(make('p','Изменения сохраняются автоматически. Восстановление добавляет новую версию и сохраняет текущую в истории.'));
+    if (!history.entries?.length) drawer.append(make('p','Первые изменения появятся здесь автоматически.'));
+    for (const entry of history.entries || []) {
+      const item=make('article',null,'item');
+      item.append(make('strong',new Date(entry.createdAt).toLocaleString('ru-RU')),
+        make('small',`${entry.source==='restore'?'Восстановление':entry.source==='initial'?'Исходная версия':'Изменения'} · ${(entry.bytes/1024).toFixed(1)} КБ`));
+      item.append(button('Восстановить',async()=>{
+        const current=await nativeEditor.flush();
+        nativeEditor.beginRestore();
+        try {
+          const result=await nativeEditor.call('canvas_history_restore',{id:entry.id,docJson:current.docJson});
+          nativeEditor.acceptRestored(result); await renderHistory(false);
+        } catch(error) { nativeEditor.cancelRestore(); throw error; }
+      })); drawer.append(item);
+    }
   }
   async function renderAgents() {
     const activity = await nativeEditor.call('canvas_agents'); show('agents', 'Агенты на холсте');
@@ -157,6 +179,8 @@ const nativeWorkspace = (() => {
       nativeEditor.send({type:'op-bridge/display-mode',mode:value});displayedMode=value;
     }
   }
+  $('workspace-history').onclick = () => renderHistory().catch(e => nativeEditor.status(e.message,true));
+  $('workspace-library').onclick = () => nativeLibrary.open({show,drawer,make,button}).catch(e => nativeEditor.status(e.message,true));
   $('workspace-fit').onclick=()=>nativeEditor.send({type:'op-bridge/fit-content'});
   $('workspace-project').onclick = () => renderProjects().catch(e => nativeEditor.status(e.message,true));
   $('workspace-context').onclick = renderContext;
@@ -175,6 +199,10 @@ const nativeWorkspace = (() => {
     contextData,
     update(current, sent) {
       state = current; delivered = sent;
+      const saving=current.autosave;
+      $('workspace-save-state').textContent = saving?.state==='error'?'Ошибка сохранения':saving?.state==='pending'?'Сохраняется…':'Сохранено';
+      $('workspace-save-state').dataset.error=String(saving?.state==='error');
+      $('workspace-save-state').title=saving?.error || saving?.filePath || current.filePath || 'Автосохранение в папку проекта';
       $('workspace-project').textContent = current.project?.name || 'Проект';
       $('workspace-project').title = current.project?.projectRoot || '';
       $('workspace-context').textContent = contextEnabled ? `Контекст · ${current.selection?.count || 0}` : 'Контекст выключен';

@@ -19,6 +19,7 @@ import { startPanel } from './canvas-panel.mjs';
 import { forward, errorReply } from './transport.mjs';
 import { readCanvasSelection } from './canvas-selection.mjs';
 import { importCanvasImage } from './canvas-images.mjs';
+import { CanvasFonts, fontTools } from './canvas-fonts.mjs';
 import { prepareCanvasBrowser, browserLaunchStatus } from './browser-launch.mjs';
 import { prepareCodegen, completeCodegen, pollCodegen, cancelCodegen, codegenSummary, frameworks } from './canvas-codegen.mjs';
 
@@ -32,6 +33,7 @@ export const canvasTools = [
     inputSchema:{...schema({projectRoot:{type:'string'},sessionId:{type:'string'},name:{type:'string'},arguments:{type:'object'}}),required:['projectRoot','sessionId','name']},
     annotations:{destructiveHint:false,openWorldHint:false},_meta:{ui:{visibility:['app']}}},
   ...communityTools,
+  ...fontTools,
   ...workspaceTools,
   { name: 'canvas_detach_source', description: 'App-only: detach the previous save destination after a successful New/Open/import. Does not write or delete any file.',
     inputSchema: schema({}), annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
@@ -145,9 +147,11 @@ export class CanvasController {
     this.agents=new CanvasAgents({session:this.session});
     const agents=this.agents;
     this.agentBroker=await startCanvasAgentBroker(agents,{projectRoot:this.project.projectRoot,
-      dispatch:(action,args)=>this.enqueue(()=>agents.dispatch(action,args))});
+      dispatch:(action,args)=>this.enqueue(async()=>{const result=await agents.dispatch(action,args);if(action==='apply')this.fonts?.schedule();return result;})});
     this.comments=new CanvasComments({session:this.session,filePath:join(this.project.directory,'comments',this.documentId+'.json'),
       identity:{projectId:this.project.projectId,documentId:this.documentId,canvasId:this.agents.canvasId}});
+    this.fonts ||= new CanvasFonts(this);
+    this.fonts.attach();
   }
   async quiesceDocumentAgents() {
     if(this.agentBroker) {await this.agentBroker.close();this.agentBroker=null;}
@@ -171,7 +175,8 @@ export class CanvasController {
       const {projectRoot,canvasId,action,...operation}=args;
       if(canvasId===this.agents?.canvasId) {
         if(projectRoot!==this.project.projectRoot) throw Error('Агент назначен другому проекту.');
-        return toolResult(await this.agents.dispatch(action,operation));
+        const result=await this.agents.dispatch(action,operation);if(action==='apply')this.fonts?.schedule();
+        return toolResult(result);
       }
       return toolResult(await callCanvasAgent(canvasId,action,operation,{projectRoot}));
     }
@@ -187,11 +192,24 @@ export class CanvasController {
     if (name === 'open_canvas' || name === 'canvas_open_browser') return this.open(args);
     if (!this.session) throw new Error('Open a managed canvas with canvas_open_browser or open_canvas first.');
     if(this.projectSwitchUncertain && !['canvas_status','canvas_selection','canvas_documents','canvas_comments','canvas_agents','canvas_history','canvas_history_status'].includes(name)) throw Error('Переключение макета не подтверждено. Изменения остановлены; откройте сохранённый проект заново.');
-    if(name==='canvas_autosave') return toolResult(await this.persistence.flush(args));
+    if(name==='canvas_autosave') {
+      const result=await this.persistence.flush(args);
+      this.fonts?.schedule(args.docJson?JSON.parse(args.docJson):undefined);
+      return toolResult(result);
+    }
     if(name==='canvas_history' || name==='canvas_history_status') return toolResult(await this.persistence.list());
     if(name==='canvas_history_restore') return toolResult(await this.restoreHistory(args));
     if(name==='canvas_community_file') return communityAssetFile(this,args);
-    if(name.startsWith('canvas_community_')) return toolResult(await dispatchCommunityTool(this,name,args));
+    if(name.startsWith('canvas_community_')) {
+      const result=await dispatchCommunityTool(this,name,args);
+      if(name==='canvas_community_settings'&&(args.autonomous!==undefined||args.verifyLicenses!==undefined))this.fonts?.schedule(undefined,{force:true});
+      const path=name==='canvas_community_prepare'?result.path:result.conversion?.path;
+      if(path&&this.fonts)result.fonts=await this.fonts.acquireResource(path);
+      return toolResult(result);
+    }
+    if(name==='canvas_fonts_status')return toolResult(await this.fonts.status());
+    if(name==='canvas_fonts_prepare')return toolResult(await this.fonts.prepare(args));
+    if(name==='canvas_fonts_library')return toolResult(await this.fonts.list(args));
     if(name==='canvas_documents') return toolResult(await projectDocuments(this));
     if(name==='canvas_document_open') return toolResult(await switchProjectDocument(this,args));
     if(name==='canvas_document_import') return toolResult(await importProjectDocument(this,args));
@@ -234,6 +252,7 @@ export class CanvasController {
     const version = await writeReplacement(this, validateDocument(selected.bytes), live.version);
     this.session.selectionSnapshot = null;
     await this.persistence.flush({ source: 'restore', restoredFrom: id, forceHistory: true });
+    this.fonts?.schedule();
     return { filePath: this.session.source, recoveryPath: this.recoveryPath(), version,
       documentId: this.documentId, project: projectSummary(this), autosave: this.persistence.status(),
       history: await this.persistence.list() };
@@ -271,11 +290,15 @@ export class CanvasController {
         message={...message,params:{...message.params,arguments:args}};
       }
       if(!this.session && !this.options.port && message.method==='tools/call') throw Error('Сначала откройте холст с open_canvas(projectRoot). Глобальный случайный документ не выбран.');
+      if(this.session&&message.method==='tools/call'&&['get_screenshot','export_nodes'].includes(message.params.name))await this.fonts?.readyForPreview();
       const upstream = this.session ? await this.session.forward(message) : await forward(message, this.options);
-      if (this.session && message.method === 'tools/call' && !upstream?.error && !upstream?.result?.isError) this.persistence?.changed();
+      if (this.session && message.method === 'tools/call' && !upstream?.error && !upstream?.result?.isError) {
+        this.persistence?.changed();
+        if(/^(?:batch_design|insert_|update_node|set_node_(?:text|font))/.test(message.params.name))this.fonts?.schedule();
+      }
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.9.0' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.10.0' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }
@@ -289,6 +312,7 @@ export class CanvasController {
     }
   }
   async close() {
+    this.fonts?.close();
     await this.sessionBroker?.close();this.sessionBroker=null;
     await this.queue;
     await closeTransfers(this);

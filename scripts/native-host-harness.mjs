@@ -18,6 +18,7 @@ const host=http.createServer(async(req,res)=>{
  try {
   if(req.headers.host!==new URL(origin).host||(req.headers.origin&&req.headers.origin!==origin)){json(res,403,{});return;}
   if(req.method==='GET'&&req.url===`/${key}/report`){json(res,200,report);return;}
+  if(req.method==='GET'&&req.url===`/${key}/fonts`){json(res,200,await controller.fonts.status());return;}
   if(req.method==='GET'&&req.url===`/${key}/direct`){
    const proxy=`<script>const harnessFetch=window.fetch.bind(window);window.addEventListener('message',async event=>{const m=event.data;if(event.source!==window||m?.jsonrpc!=='2.0'||!m.method)return;const response=await(await harnessFetch(${JSON.stringify('/'+key+'/rpc')},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(m)})).json();if(m.id!==undefined)window.postMessage(response,location.origin);if(m.method==='ui/notifications/initialized')window.postMessage(${toolResult},location.origin);});</script>`;
    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});res.end(html.replace('<head>','<head>'+proxy));return;

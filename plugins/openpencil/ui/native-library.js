@@ -22,6 +22,7 @@ const nativeLibrary = (() => {
     auto.onchange=async()=>{auto.disabled=true;try{await nativeEditor.call('canvas_community_settings',{scope:'global',autonomous:auto.checked});}catch(error){auto.checked=!auto.checked;nativeEditor.status(error.message,true);}finally{auto.disabled=false;}};
     autoLabel.append(auto,make('span','Автоподбор ресурсов агентом'));details.append(autoLabel);
     drawer.append(details);
+    if(typeof nativeFonts!=='undefined')await nativeFonts.section({drawer,make,button});
     let scope='global';
     const scopes=make('div',null,'library-scopes');
     const all=button('Вся библиотека',()=>setScope('global')),project=button('В этом проекте',()=>setScope('project'));

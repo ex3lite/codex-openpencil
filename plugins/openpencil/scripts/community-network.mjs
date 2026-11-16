@@ -30,13 +30,13 @@ async function addressesFor(url, lookupImpl) {
   if (!records.length || records.some(record => !isPublicAddress(record.address))) throw Error('Public downloads cannot access private, loopback or reserved network addresses.');
   return records;
 }
-function request(url, records, signal) {
+function request(url, records, signal, accept) {
   return new Promise((resolve,reject) => {
     // Pin the validated DNS answer to the connection, preventing DNS rebinding.
     const req = https.get(url,{signal,agent:false,lookup(_hostname,options,callback) {
       if(options.all) callback(null,records);
       else callback(null,records[0].address,records[0].family);
-    },headers:{Accept:'application/octet-stream,text/html,image/*,text/plain','User-Agent':'OpenBrush-Community/1.0'}},response => {
+    },headers:{Accept:accept,'User-Agent':'OpenBrush-Community/1.0'}},response => {
       const headers = new Headers();
       for (const [key,value] of Object.entries(response.headers)) if (value !== undefined) headers.set(key,Array.isArray(value)?value.join(', '):value);
       resolve({status:response.statusCode,ok:response.statusCode>=200 && response.statusCode<300,headers,body:response});
@@ -44,12 +44,13 @@ function request(url, records, signal) {
     req.once('error',reject);
   });
 }
-export async function fetchPublicBytes(input,{limit=32*1024*1024,lookupImpl=lookup,fetchImpl,redirects=4,timeoutMs=30000}={}) {
+export async function fetchPublicBytes(input,{limit=32*1024*1024,lookupImpl=lookup,fetchImpl,redirects=4,timeoutMs=30000,accept='application/octet-stream,text/html,image/*,text/plain'}={}) {
+  if(typeof accept!=='string'||!accept.length||accept.length>256||/[\r\n]/.test(accept))throw Error('Invalid public download media type.');
   let url = publicHttpsUrl(input), remaining = redirects;
   const signal = AbortSignal.timeout(timeoutMs);
   while (true) {
     const records = await addressesFor(url,lookupImpl);
-    const response = fetchImpl ? await fetchImpl(url.href,{redirect:'manual',signal,credentials:'omit',headers:{Accept:'application/octet-stream,text/html,image/*,text/plain'}}) : await request(url,records,signal);
+    const response = fetchImpl ? await fetchImpl(url.href,{redirect:'manual',signal,credentials:'omit',headers:{Accept:accept}}) : await request(url,records,signal,accept);
     if ([301,302,303,307,308].includes(response.status)) {
       if (response.body?.destroy) response.body.destroy(); else await response.body?.cancel?.();
       if (remaining-- <= 0 || !response.headers.get('location')) throw Error('Public download redirect limit exceeded.');

@@ -59,14 +59,15 @@ const nativeBridge = (() => {
       : await request('tools/call', sessionRef
         ? {name:'canvas_session_call',arguments:{...sessionRef,name,arguments:args}}
         : {name,arguments:args});
-    if (result.isError) throw Error(result.content?.[0]?.text || 'Ошибка редактора');
+    if (result.isError) throw Object.assign(Error(result.content?.[0]?.text || 'Ошибка редактора'),
+      { code: result.structuredContent?.code });
     return result;
   }
   return {
     async init() {
       if (initialized) return initialized;
       if (typeof OP_PREVIEW !== 'undefined') return { hostCapabilities: {}, hostContext: {} };
-      initialized = await request('ui/initialize', { appInfo: { name: 'OpenBrush', version: '0.7.0' },
+      initialized = await request('ui/initialize', { appInfo: { name: 'OpenBrush', version: '0.8.0' },
         appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' });
       capabilities = initialized.hostCapabilities || {};
       context = { ...initialized.hostContext, ...context };

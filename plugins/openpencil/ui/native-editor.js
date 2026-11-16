@@ -2,7 +2,7 @@
 const nativeEditor = (() => {
   let ready = false, saving = false, dirty = false, source = null, token;
   let generation = 0, revision = 0, closed = false, identity = 0;
-  let replacementBarrier = Promise.resolve(), autosaveTimer, autosaveFailed = false, restoring = false;
+  let replacementBarrier = Promise.resolve(), autosaveTimer, autosaveFailed = false, rejectedSnapshot = null, restoring = false;
   const snapshots = new Map(), listeners = new Set();
   const element = id => document.getElementById(id);
   const value = result => result.structuredContent ?? JSON.parse(result.content.find(item => item.type === 'text').text);
@@ -39,26 +39,36 @@ const nativeEditor = (() => {
   }
   function scheduleAutosave() {
     clearTimeout(autosaveTimer);
-    if (!restoring && !autosaveFailed && ready && !closed) autosaveTimer = setTimeout(() => void save(), 700);
+    if (!restoring && !autosaveFailed && !rejectedSnapshot && ready && !closed) autosaveTimer = setTimeout(() => void save(), 700);
   }
   async function save(path) {
     if (restoring || saving || closed || autosaveFailed) return;
     const savingIdentity = identity;
+    let savingPair = { generation, revision };
     saving = true;
     try {
       const snapshot = await flush();
+      savingPair = { generation: snapshot.generation, revision: snapshot.revision };
       const result = await call(path ? 'canvas_save' : 'canvas_autosave', {
         ...(path ? {filePath:path} : {}), docJson: snapshot.docJson });
       if (identity !== savingIdentity) return;
+      if (rejectedSnapshot) status('');
+      rejectedSnapshot = null;
       source = result.filePath;
       if (generation === snapshot.generation && revision === snapshot.revision) dirty = false;
       send({ type: 'op-bridge/save-committed', generation: snapshot.generation, revision: snapshot.revision });
       updateName();
       if (path) status('Копия сохранена');
     } catch (error) {
-      autosaveFailed = true;
-      status(`Автосохранение остановлено: ${error.message}. Проверьте историю и файл перед продолжением.`, true);
-    } finally { saving = false; if (dirty && !autosaveFailed) scheduleAutosave(); }
+      if (identity !== savingIdentity) return;
+      if (error.code === 'DOCUMENT_SNAPSHOT_STALE') {
+        rejectedSnapshot = savingPair;
+        status('Снимок холста устарел. Файл не изменён. Дождитесь синхронизации и сохраните снова; новое изменение запустит автосохранение.', true);
+      } else {
+        autosaveFailed = true;
+        status(`Автосохранение остановлено: ${error.message}. Проверьте историю и файл перед продолжением.`, true);
+      }
+    } finally { saving = false; if (dirty && !autosaveFailed && !rejectedSnapshot) scheduleAutosave(); }
   }
   function receive(raw, replacement) {
     let event; try { event = JSON.parse(raw); } catch { return; }
@@ -68,6 +78,9 @@ const nativeEditor = (() => {
       ready = true; generation = event.generation; revision = event.revision; updateName(); scheduleAutosave();
     }
     if (event.type === 'op-bridge/dirty-changed') {
+      if (rejectedSnapshot && (event.generation !== rejectedSnapshot.generation || event.revision !== rejectedSnapshot.revision)) {
+        rejectedSnapshot = null; status('');
+      }
       generation = event.generation; revision = event.revision; dirty = Boolean(event.dirty) || dirty; if(dirty) scheduleAutosave();
     }
     if (event.type === 'op-bridge/sync-conflict') status('Есть конфликт изменений. Сохранение остановлено до его разрешения.', true);
@@ -80,7 +93,7 @@ const nativeEditor = (() => {
       }
     }
     if (event.type === 'op-shell/document-replaced') {
-      identity++; source = null; dirty = true; autosaveFailed = false; clearTimeout(autosaveTimer); status('');
+      identity++; source = null; dirty = true; autosaveFailed = false; rejectedSnapshot = null; clearTimeout(autosaveTimer); status('');
       element('save-dialog').close();
       void replacement.previous.then(() => call('canvas_detach_source')).then(() => { replacement.resolve(); scheduleAutosave(); }).catch(error => {
         replacement.reject(error); status('Не удалось переключить документ: ' + error.message, true);
@@ -102,7 +115,7 @@ const nativeEditor = (() => {
   });
   nativeBridge.onTeardown(async () => {
     clearTimeout(autosaveTimer);
-    if (ready && !autosaveFailed) { const snapshot=await flush(); await call('canvas_autosave',{docJson:snapshot.docJson}); }
+    if (ready && !autosaveFailed && !rejectedSnapshot) { const snapshot=await flush(); await call('canvas_autosave',{docJson:snapshot.docJson}); }
     closed = true;
     for (const pending of snapshots.values()) { clearTimeout(pending.timer); pending.reject(Error('Редактор закрыт')); }
     snapshots.clear();
@@ -126,11 +139,11 @@ const nativeEditor = (() => {
       });
     },
     get ready() { return ready && !closed; }, get saving() { return saving; }, get source() { return source; },
-    rebind(result) { identity++; source = result.filePath || null; dirty = false; autosaveFailed = false; clearTimeout(autosaveTimer); updateName(); status('Макет открыт в этом проекте.'); },
+    rebind(result) { identity++; source = result.filePath || null; dirty = false; autosaveFailed = false; rejectedSnapshot = null; clearTimeout(autosaveTimer); updateName(); status('Макет открыт в этом проекте.'); },
     beginRestore() { restoring=true; clearTimeout(autosaveTimer); },
     cancelRestore() { restoring=false; },
     acceptRestored(result) {
-      source=result.filePath; dirty=false; autosaveFailed=false; updateName();
+      source=result.filePath; dirty=false; autosaveFailed=false; rejectedSnapshot=null; updateName();
       send({type:'op-bridge/resolve-conflict',mode:'accept-remote',requestId:crypto.randomUUID()});
     },
     syncBarrier() { return replacementBarrier; },

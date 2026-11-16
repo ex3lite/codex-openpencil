@@ -14,18 +14,21 @@ const doc = name => ({ version: '0.8.5', children: [{ id: 'one', type: 'text', n
 async function fixture(t, { source = true } = {}) {
   const path = await mkdtemp(join(tmpdir(), 'autosave-'));
   const root = await realpath(path);
-  t.after(() => rm(path, { recursive: true, force: true }));
   const file = join(root, 'design.op');
   if (source) await writeFile(file, JSON.stringify(doc('original')));
   const controller = new CanvasController({ projectRoot: root });
   const binding = await bindProject(controller, source ? { filePath: file } : {});
-  t.after(() => controller.releaseProjectLease());
   const state = { document: doc('original'), version: 0, activePageIndex: 0, preserveAuthoredGeometry: true };
   const session = controller.session = Object.assign(new EditorSession(), { dir: root, draft: join(root, 'runtime.op'),
     source: binding.sourcePath, baseline: binding.baseline, document: async () => structuredClone(state), closed: false });
   attachProjectSession(controller);
   const persistence = controller.persistence = new CanvasPersistence(controller, { debounceMs: 10, historyMs: 20 });
-  t.after(() => persistence.dispose());
+  t.after(async () => {
+    persistence.dispose();
+    await controller.queue; await persistence.queue;
+    await controller.releaseProjectLease();
+    await rm(path, { recursive: true, force: true });
+  });
   await persistence.initialize();
   return { controller, persistence, session, state, root, file, snapshot: () => JSON.stringify(diskDocument(state)) };
 }
@@ -75,6 +78,72 @@ test('external file edits stop autosave and are never retried automatically', as
   await assert.rejects(f.persistence.flush(), error => error.code === 'SOURCE_CHANGED');
   f.session.save = calls;
   assert.equal(JSON.parse(await readFile(f.file)).children[0].name, 'external');
+});
+
+test('a rejected UI snapshot writes nothing and a later distinct checkpoint can save', async t => {
+  const f = await fixture(t);
+  const original = await readFile(f.file, 'utf8');
+  const stale = f.snapshot();
+  f.state.document = doc('newer daemon edit'); f.state.version++;
+  let writes = 0;
+  const save = f.session.save.bind(f.session);
+  f.session.save = async args => { writes++; return save(args); };
+  await assert.rejects(f.persistence.flush({ docJson: stale }), { code: 'DOCUMENT_SNAPSHOT_STALE' });
+  assert.equal(writes, 0);
+  assert.equal(await readFile(f.file, 'utf8'), original);
+  assert.equal(f.persistence.status().state, 'snapshot-rejected');
+  assert.equal(f.persistence.status().recoverable, true);
+  await f.session.checkpoint(); await delay(50); await f.controller.queue;
+  assert.equal(writes, 0, 'a checkpoint of the same rejected version must not retry');
+  f.state.document = doc('next deliberate edit'); f.state.version++;
+  await f.session.checkpoint(); await delay(50); await f.controller.queue;
+  assert.equal(writes, 1);
+  assert.equal(JSON.parse(await readFile(f.file)).children[0].name, 'next deliberate edit');
+  assert.equal(f.persistence.status().state, 'saved');
+  assert.equal(f.persistence.status().code, undefined);
+});
+
+test('a fresh explicit UI snapshot can save after a rejected snapshot without another edit', async t => {
+  const f = await fixture(t);
+  const stale = f.snapshot();
+  f.state.document = doc('latest edit'); f.state.version++;
+  await assert.rejects(f.persistence.flush({ docJson: stale }), { code: 'DOCUMENT_SNAPSHOT_STALE' });
+  await f.persistence.flush({ docJson: f.snapshot() });
+  await f.persistence.boundary();
+  assert.equal(JSON.parse(await readFile(f.file)).children[0].name, 'latest edit');
+  assert.equal(f.persistence.status().state, 'saved');
+});
+
+test('an uncertain write stays stopped after later checkpoints and explicit snapshots', async t => {
+  const f = await fixture(t);
+  f.state.document = doc('local'); f.state.version++;
+  let writes = 0;
+  f.session.save = async () => { writes++; throw Object.assign(Error('write acknowledgement lost'), { code: 'UNCERTAIN_WRITE' }); };
+  await assert.rejects(f.persistence.flush(), { code: 'UNCERTAIN_WRITE' });
+  f.state.document = doc('later local edit'); f.state.version++;
+  await f.session.checkpoint(); await delay(50); await f.controller.queue;
+  await assert.rejects(f.persistence.flush({ docJson: f.snapshot() }), { code: 'UNCERTAIN_WRITE' });
+  assert.equal(writes, 1);
+  assert.equal(f.persistence.status().recoverable, false);
+});
+
+test('the second save guard rejects a concurrent edit before disk write without poisoning persistence', async t => {
+  const f = await fixture(t);
+  f.state.document = doc('first edit'); f.state.version++;
+  const bytes = await readFile(f.file);
+  let reads = 0;
+  f.session.document = async () => {
+    if (++reads === 2) { f.state.document = doc('concurrent edit'); f.state.version++; }
+    return structuredClone(f.state);
+  };
+  await assert.rejects(f.persistence.flush({ docJson: f.snapshot() }), error =>
+    error.code === 'DOCUMENT_SNAPSHOT_STALE' && error.writeAttempted === false);
+  assert.deepEqual(await readFile(f.file), bytes);
+  assert.equal(f.persistence.status().state, 'snapshot-rejected');
+  await assert.rejects(f.persistence.flush(), { code: 'DOCUMENT_SNAPSHOT_STALE' });
+  await f.persistence.flush({ docJson: f.snapshot() });
+  await f.persistence.boundary();
+  assert.equal(JSON.parse(await readFile(f.file)).children[0].name, 'concurrent edit');
 });
 
 test('history restore preserves current work, replaces once with CAS and records restore', async t => {

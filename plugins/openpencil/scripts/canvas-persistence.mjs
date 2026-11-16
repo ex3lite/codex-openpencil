@@ -4,7 +4,7 @@ import { sha256 } from './editor-runtime.mjs';
 import { sourceBytes, validateDocument } from './editor-session.mjs';
 import { diskDocument, snapshotMatches } from './document-format.mjs';
 
-/** Owns one document only. Errors stop timers until explicit recovery/reopen. */
+/** Owns one document only. Uncertain writes stop until explicit recovery/reopen. */
 export class CanvasPersistence {
   constructor(controller, { debounceMs = 700, historyMs = 2000 } = {}) {
     this.controller = controller; this.session = controller.session; this.documentId = controller.documentId;
@@ -18,9 +18,11 @@ export class CanvasPersistence {
     }
   }
   status() {
+    const failure = this.error || this.rejection?.error;
     return { state: this.error ? 'error' : this.state, filePath: this.session.source,
       savedAt: this.savedAt || null, lastSavedVersion: this.lastSavedVersion ?? null,
-      ...(this.error && { error: this.error.message, code: this.error.code || 'AUTOSAVE_FAILED' }) };
+      ...(failure && { error: failure.message, code: failure.code || 'AUTOSAVE_FAILED',
+        recoverable: !this.error }) };
   }
   enqueue(work) { const result = this.queue.then(work); this.queue = result.catch(() => {}); return result; }
   async initialize() {
@@ -44,8 +46,14 @@ export class CanvasPersistence {
     if (this.error) throw this.error;
     try {
       const live = await this.session.document();
+      // A checkpoint for the rejected revision is not a new edit. Do not turn
+      // it into an automatic retry; an explicit UI save can present a fresh snapshot.
+      if (docJson === undefined && this.rejection?.version === live.version) {
+        this.state = 'snapshot-rejected'; throw this.rejection.error;
+      }
       if (docJson !== undefined && !snapshotMatches(validateDocument(docJson), live)) {
-        throw Object.assign(new Error('Canvas changed before autosave. Synchronize the canvas before continuing.'), { code: 'DOCUMENT_SNAPSHOT_STALE' });
+        throw Object.assign(new Error('Canvas changed before autosave. No file was written; synchronize the canvas before saving again.'),
+          { code: 'DOCUMENT_SNAPSHOT_STALE', writeAttempted: false, version: live.version });
       }
       const bytes = Buffer.from(JSON.stringify(diskDocument(live), null, 2) + '\n');
       const hash = sha256(bytes);
@@ -56,7 +64,7 @@ export class CanvasPersistence {
       } else if (sha256(await sourceBytes(this.session.source)) !== this.session.baseline) {
         throw Object.assign(new Error('Source changed outside this canvas. Autosave stopped.'), { code: 'SOURCE_CHANGED' });
       }
-      this.state = 'saved';
+      this.rejection = null; this.state = 'saved';
       const historyBytes = await readFile(this.session.source);
       const changedHistory = this.pendingHistory ? sha256(this.pendingHistory.bytes) !== sha256(historyBytes) : true;
       this.pendingHistory = { bytes: historyBytes, version: this.lastSavedVersion, source, restoredFrom };
@@ -68,7 +76,13 @@ export class CanvasPersistence {
       }
       return { ...this.session.lastSave, filePath: this.session.source, sha256: this.savedHash,
         version: this.lastSavedVersion, documentId: this.documentId, autosave: this.status() };
-    } catch (error) { this.fail(error); throw error; }
+    } catch (error) {
+      if (error.code === 'DOCUMENT_SNAPSHOT_STALE' && error.writeAttempted === false) {
+        this.rejection = { error, version: error.version };
+        this.state = 'snapshot-rejected'; clearTimeout(this.timer);
+      } else this.fail(error);
+      throw error;
+    }
   }
   async commitHistory(force = false) {
     this.assertCurrent(); if (this.error) throw this.error;

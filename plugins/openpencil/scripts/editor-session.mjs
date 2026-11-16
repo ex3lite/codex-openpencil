@@ -149,7 +149,8 @@ export class EditorSession {
     // The editor flushes its sync gate before requesting Save. Refuse a stale UI snapshot.
     const snapshot = docJson === undefined ? diskDocument(value) : validateDocument(docJson);
     if (docJson !== undefined && !snapshotMatches(snapshot, value)) {
-      throw new Error('The canvas changed while saving. Refresh and save again; no file was overwritten.');
+      throw Object.assign(new Error('The canvas changed while saving. Refresh and save again; no file was overwritten.'),
+        { code: 'DOCUMENT_SNAPSHOT_STALE', writeAttempted: false, version: value.version });
     }
     const bytes = Buffer.from(JSON.stringify(snapshot, null, 2) + '\n');
     const hash = await atomicSave(filePath, bytes, filePath === this.source ? this.baseline : null);

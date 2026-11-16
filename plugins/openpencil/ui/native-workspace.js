@@ -1,7 +1,9 @@
 // Visible project, feedback and context controls around the original Rust editor.
 const nativeWorkspace = (() => {
   const $ = id => document.getElementById(id);
-  let state, mode, target, delivered, contextEnabled = true, sending = false, displayedMode, projectBusy = false;
+  let state, mode, target, sending = false, displayedMode, projectBusy = false;
+  let contextChanged = () => {}, retryContext = () => {}, delivery = {state:'pending'}, contextNotice = '';
+  const context = nativeContextState.create();
   const drawer = $('workspace-drawer');
   function make(tag, text, className) {
     const element = document.createElement(tag); if (text) element.textContent = text;
@@ -33,22 +35,54 @@ const nativeWorkspace = (() => {
     if (!selection?.count) return 'Выберите слой на холсте или в списке слоёв';
     return selection.nodes.map(n => n.name || n.type).join(', ');
   }
-  function contextData(current = state) {
-    if (!current) return null;
-    return { project: current.project, documentId: current.documentId, canvasId: current.canvasId,
-      canvasFile: current.filePath, version: current.version,
-      selection: contextEnabled && current.selection ? {...current.selection,nodeIds:current.selection.nodeIds.slice(0,100),nodes:current.selection.nodes.slice(0,100),truncated:current.selection.count>100} : null, selectionSharing: contextEnabled,
-      pendingComments: current.comments?.filter(c => c.status !== 'resolved').slice(-20).map(c => ({ id:c.id, pageId:c.pageId, nodeIds:c.nodeIds, text:c.text.slice(0,2000), version:c.version, status:c.status })) || [] };
+  function contextData() { return context.payload(); }
+  function contextEdit(action) {
+    action(); contextNotice = ''; contextChanged(); renderContext();
+    $('workspace-context').textContent = `Контекст · ${context.attachments.length}`;
+  }
+  async function addContext() {
+    const current = await nativeEditor.call('canvas_status');
+    if (context.observe(current)) contextNotice = 'Открыт другой макет. Вложения предыдущего макета удалены.';
+    state = current;
+    contextEdit(() => context.add());
+  }
+  function updateContextDelivery() {
+    const output = $('context-delivery'); if (!output) return;
+    output.textContent = delivery.state === 'accepted' ? 'Этот набор контекста принят Codex.' :
+      delivery.state === 'unsupported' ? 'В этой панели Codex не поддерживает передачу контекста.' :
+      delivery.state === 'error' ? `Передача не подтверждена: ${delivery.error} Повторите отправку.` : 'Передаём этот набор в Codex…';
+    output.dataset.error = String(delivery.state === 'error');
+    const retry = $('context-retry'); if (retry) retry.hidden = delivery.state !== 'error';
+  }
+  function refreshContextSelection() {
+    const selection = $('context-selection'), add = $('context-add');
+    if (selection) selection.textContent = context.available ? describe(state?.selection) : 'Холст временно недоступен. Вложения сохранены в панели.';
+    if (add) add.disabled = !context.available || !state?.selection?.count || !nativeBridge.capabilities.updateModelContext;
   }
   function renderContext() {
     show('context', 'Контекст этого чата');
-    const label = make('label', null, 'toggle'), toggle = document.createElement('input');
-    toggle.type = 'checkbox'; toggle.checked = contextEnabled;
-    toggle.onchange = () => { contextEnabled = toggle.checked; delivered = null; renderContext(); };
-    label.append(toggle, make('span', 'Передавать текущее выделение')); drawer.append(label);
-    drawer.append(make('p', 'В чат передаются данные ниже. Пустое выделение не означает весь макет. Комментарий закрепляется за выбранными слоями и своей версией.'));
-    const data=make('pre', JSON.stringify(contextData(), null, 2));data.id='context-details';drawer.append(data);
-    const delivery=make('p', delivered ? 'Контекст принят Codex.' : 'Ожидаем подтверждение Codex…', 'delivery');delivery.id='context-delivery';drawer.append(delivery);
+    drawer.append(make('p', 'Добавьте нужные слои. Вложения останутся в контексте, пока вы их не удалите или не откроете другой макет.'));
+    const selection = make('p'); selection.id = 'context-selection';
+    const add = button('Добавить в контекст', addContext, 'primary'); add.id = 'context-add';
+    drawer.append(selection, add, make('h3', `Вложения · ${context.attachments.length}`));
+    if (!context.attachments.length) drawer.append(make('p', 'Слои не добавлены. Codex получает только название проекта и адрес открытого макета.'));
+    for (const attachment of context.attachments) {
+      const item = make('article', null, 'item context-attachment');
+      item.append(make('strong', attachment.nodes.map(node => node.name || node.type || node.id).join(', ') || attachment.nodeIds.join(', ')),
+        make('small', `${attachment.nodeIds.length} слоёв · закреплено на версии ${attachment.capturedVersion}`),
+        button('Удалить из контекста', () => contextEdit(() => context.remove(attachment.id))));
+      drawer.append(item);
+    }
+    if (context.attachments.length) drawer.append(button('Удалить все вложения', () => contextEdit(() => context.clear())));
+    if (contextNotice) drawer.append(make('p', contextNotice));
+    const deliveryText = make('p', null, 'delivery'); deliveryText.id = 'context-delivery'; deliveryText.setAttribute('role','status');
+    const retry = button('Повторить передачу', () => retryContext()); retry.id = 'context-retry';
+    drawer.append(deliveryText, retry);
+    const details = make('details'), summary = make('summary', 'Что именно получает Codex');
+    const data = make('pre', JSON.stringify(contextData(), null, 2)); data.id = 'context-details';
+    details.append(summary, data); drawer.append(details);
+    drawer.append(make('p', 'Выделение и правки на холсте сами не добавляют контекст. Комментарий отправляется отдельно, с закреплённой целью. Удаление вложения обновляет следующий контекст; предыдущие сообщения чата сохраняются.'));
+    refreshContextSelection(); updateContextDelivery();
   }
   function targetBlock(selection) {
     const block = make('div', null, 'target'); block.append(make('strong', describe(selection)));
@@ -192,26 +226,40 @@ const nativeWorkspace = (() => {
   nativeEditor.onEvent(event => {
     if(event.type==='op-bridge/ready') updateExpand();
     if (event.type === 'op-shell/display-mode') void expand().catch(e => nativeEditor.status(e.message,true));
-    if (event.type === 'op-shell/document-replaced') { target = null; close(); }
+    if (event.type === 'op-shell/document-replaced') {
+      target = null; context.reset(); contextChanged();
+      $('workspace-context').textContent = 'Контекст · 0'; close();
+    }
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && mode && !sending) close(); });
   return {
     contextData,
-    update(current, sent) {
-      state = current; delivered = sent;
+    onContextChange(changed, retry) { contextChanged = changed; retryContext = retry; },
+    contextDelivery(status) { delivery = status; if (mode === 'context') updateContextDelivery(); },
+    contextUnavailable() {
+      context.unavailable();
+      if (mode === 'context') {
+        refreshContextSelection(); $('context-details').textContent = JSON.stringify(contextData(),null,2);
+      }
+    },
+    update(current) {
+      state = current;
+      const switched = context.observe(current);
+      if (switched) contextNotice = 'Открыт другой макет. Вложения предыдущего макета удалены.';
       const saving=current.autosave;
-      $('workspace-save-state').textContent = saving?.state==='error'?'Ошибка сохранения':saving?.state==='pending'?'Сохраняется…':'Сохранено';
-      $('workspace-save-state').dataset.error=String(saving?.state==='error');
+      $('workspace-save-state').textContent = saving?.state==='error'?'Ошибка сохранения':saving?.state==='snapshot-rejected'?'Нужна синхронизация':saving?.state==='pending'?'Сохраняется…':'Сохранено';
+      $('workspace-save-state').dataset.error=String(['error','snapshot-rejected'].includes(saving?.state));
       $('workspace-save-state').title=saving?.error || saving?.filePath || current.filePath || 'Автосохранение в папку проекта';
       $('workspace-project').textContent = current.project?.name || 'Проект';
       $('workspace-project').title = current.project?.projectRoot || '';
-      $('workspace-context').textContent = contextEnabled ? `Контекст · ${current.selection?.count || 0}` : 'Контекст выключен';
-      $('workspace-context').title = describe(current.selection);
+      $('workspace-context').textContent = `Контекст · ${context.attachments.length}`;
+      $('workspace-context').title = 'Только явно добавленные вложения';
       $('workspace-comment').disabled = !current.selection?.count;
       $('workspace-agents').textContent = `Агенты · ${current.agents?.agents?.length || 0}`;
       if (mode === 'context') {
+        if (switched) renderContext();
+        refreshContextSelection();
         $('context-details').textContent=JSON.stringify(contextData(),null,2);
-        $('context-delivery').textContent=delivered?'Контекст принят Codex.':'Ожидаем подтверждение Codex…';
       }
       updateExpand();
     },

@@ -20,3 +20,14 @@ test('library hands verified fig bytes to the original canvas file importer',asy
  assert.equal(events[0].dataTransfer.files[0].name,'Kit.fig');
  assert.deepEqual([...events[0].dataTransfer.files[0].parts[0]],[70,73,71]);
 });
+test('library renders only original covers and labels unknown licenses truthfully',async()=>{
+ const nodes=[];const make=(tag,text,className)=>{const node={tag,text,className,children:[],append(...items){this.children.push(...items);},setAttribute(){},replaceChildren(){this.children=[];}};nodes.push(node);return node;};
+ const assets=[{id:'covered',name:'Original kit',kind:'ui-kit',format:'fig',author:'Author',license:{status:'unknown'},available:false,sourceUrl:'https://example.com',coverDataUrl:'data:image/png;base64,T1JJR0lOQUw=',previewDataUrl:'data:image/svg+xml;base64,RkFLRQ=='},
+  {id:'uncovered',name:'Icon',kind:'icon',format:'svg',author:'Author',license:{spdx:'MIT'},available:false,sourceUrl:'https://example.com',previewDataUrl:'data:image/svg+xml;base64,RkFLRQ=='}];
+ const context=vm.createContext({document:{createElement:make},nativeEditor:{async call(){return {assets};}},nativeBridge:{}});
+ vm.runInContext(source+'\nglobalThis.library=nativeLibrary;',context);
+ await context.library.open({show(){},drawer:make('div'),make,button:(text,action)=>({text,action})});
+ const images=nodes.filter(n=>n.tag==='img');assert.equal(images.length,1);assert.equal(images[0].src,assets[0].coverDataUrl);
+ assert.ok(nodes.some(n=>n.text==='Оригинальная обложка недоступна'));
+ assert.ok(nodes.some(n=>n.text==='Лицензия неизвестна · ответственность пользователя'));
+});

@@ -5,6 +5,8 @@ import { basename, extname, isAbsolute, join } from 'node:path';
 import { importCanvasImage } from './canvas-images.mjs';
 import { importProjectDocument } from './canvas-projects.mjs';
 import { liveDocument } from './document-format.mjs';
+import { fetchPublicBytes, publicHttpsUrl } from './community-network.mjs';
+import { communitySettings } from './community-settings.mjs';
 
 const LIMIT = 32 * 1024 * 1024;
 const INDEX_LIMIT = 8 * 1024 * 1024;
@@ -13,19 +15,20 @@ const KINDS = ['icon', 'ui-kit', 'reference', 'document'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const string = { type: 'string' };
 const metadata = { name: string, kind: { type:'string', enum:KINDS }, sourceUrl:string, communityUrl:string,
-  author:string, licenseSpdx:string, licenseUrl:string, licenseText:string, tags:{type:'array',items:string,maxItems:32} };
+  coverUrl:string, coverPath:string, coverPageUrl:string, author:string, licenseSpdx:string, licenseUrl:string, licenseText:string, tags:{type:'array',items:string,maxItems:32} };
 const tool = (name, description, properties, required = [], readOnly = false, modelOnly = false) => ({
   name, description, inputSchema:{ type:'object', properties, required, additionalProperties:false },
   annotations:{ readOnlyHint:readOnly, destructiveHint:false, openWorldHint:name.endsWith('_download') || name.endsWith('_seed') },
   ...(modelOnly && { _meta:{ui:{visibility:['model']}} }),
 });
 export const communityTools = [
+  tool('canvas_community_settings','Read or update project Community settings. License verification defaults to enabled; disabling permits unknown licenses under user responsibility, while retaining known attribution and licenses.',{verifyLicenses:{type:'boolean'}}),
   tool('canvas_community_search','Search this project’s downloaded Community dataset. Returns provenance, license, checksums and safe local previews. For external discovery use the host web search and Figma Community URLs; this tool searches local files only.',
     {query:string,kind:{type:'string',enum:KINDS},limit:{type:'integer',minimum:1,maximum:100},offset:{type:'integer',minimum:0},previews:{type:'boolean'}},[],true),
   tool('canvas_community_ingest','Copy an authorized local SVG, image, .op or .fig into the project dataset with source and retained license. .fig can be opened by the native Figma importer from the library. No archive extraction or script execution.',
-    {...metadata,sourcePath:string,licensePath:string},['sourcePath','kind','sourceUrl','author','licenseSpdx'],false,true),
-  tool('canvas_community_download','Download a licensed public asset from raw.githubusercontent.com or cdn.jsdelivr.net into the project dataset. Requires explicit provenance and retained license. No Figma session scraping, private URLs or credentials.',
-    {...metadata,url:string,format:{type:'string',enum:[...FORMATS]},expectedSha256:string},['url','kind','sourceUrl','author','licenseSpdx'],false,true),
+    {...metadata,sourcePath:string,licensePath:string},['sourcePath','kind','sourceUrl','author'],false,true),
+  tool('canvas_community_download','Download an authorized public HTTPS asset from its original source into the project dataset. Keeps source, any known license and original cover. License evidence is required when project license verification is enabled. No login, private URLs or access-control bypass.',
+    {...metadata,url:string,format:{type:'string',enum:[...FORMATS]},expectedSha256:string},['url','kind','sourceUrl','author'],false,true),
   tool('canvas_community_seed','Download the pinned Lucide essential icon pack with full upstream ISC/MIT license and verified official Community plugin URL. Adds local editable SVGs; does not edit the canvas.',
     {pack:{type:'string',enum:['lucide-essential']}},[],false,true),
   { ...tool('canvas_community_file','App-only: read a checksum-verified .fig asset from the current project dataset for the native Rust Figma importer. Binary bytes are returned only in private App metadata.',{assetId:string},['assetId'],true), _meta:{ui:{visibility:['app']}} },
@@ -40,13 +43,6 @@ function text(value, label, max = 2048) {
 function publicUrl(value, label = 'source URL') {
   let url; try { url = new URL(text(value, label)); } catch { throw Error(`Invalid ${label}.`); }
   if (url.protocol !== 'https:' || url.username || url.password || url.port) throw Error(`Use a public HTTPS ${label} without credentials or a port.`);
-  return url.href;
-}
-function downloadUrl(value) {
-  const url = new URL(publicUrl(value,'download URL'));
-  if (!['raw.githubusercontent.com','cdn.jsdelivr.net'].includes(url.hostname) || url.search || url.hash) {
-    throw Error('Direct downloads support only public raw.githubusercontent.com and cdn.jsdelivr.net URLs without query strings. Download other authorized resources locally, then ingest them.');
-  }
   return url.href;
 }
 async function bytesAt(path, limit = LIMIT) {
@@ -82,13 +78,32 @@ function validateContent(bytes, format) {
     if (!doc || (!Array.isArray(doc.pages) && !Array.isArray(doc.children))) throw Error('Invalid .op document structure.');
   }
 }
+function coverFormat(bytes) {
+  if(bytes.subarray(0,8).toString('hex')==='89504e470d0a1a0a') return 'png';
+  if(bytes[0]===255 && bytes[1]===216) return 'jpg';
+  if(bytes.toString('ascii',0,4)==='RIFF') return 'webp';
+  if(bytes.length>=16 && bytes.toString('ascii',4,8)==='ftyp') {
+    const size=bytes.readUInt32BE(0);
+    if(size>=16 && size<=bytes.length && size%4===0) {
+      const brands=[bytes.toString('ascii',8,12)];
+      for(let offset=16;offset<size;offset+=4) brands.push(bytes.toString('ascii',offset,offset+4));
+      if(brands.some(brand=>brand==='avif' || brand==='avis')) return 'avif';
+    }
+  }
+  return null;
+}
+function validateCover(bytes,format) {
+  if(format==='avif') {
+    if(coverFormat(bytes)!=='avif') throw Error('Invalid AVIF original cover content.');
+  } else validateContent(bytes,format);
+}
 const importMode = format => format === 'svg' ? 'vector' : format === 'op' ? 'document' : format === 'fig' ? 'figma' : 'image';
 
 export class CommunityDataset {
-  constructor(projectRoot, { fetchImpl = fetch } = {}) { this.projectRoot = projectRoot; this.fetchImpl = fetchImpl; this.directory = join(projectRoot,'.openpencil','community'); }
+  constructor(projectRoot, { fetchImpl, lookupImpl } = {}) { this.projectRoot = projectRoot; this.network = {fetchImpl,lookupImpl}; this.coverCache=new Map(); this.directory = join(projectRoot,'.openpencil','community'); }
   async ensure() {
     if (!isAbsolute(this.projectRoot) || await realpath(this.projectRoot) !== this.projectRoot) throw Error('Use the canonical bound project directory.');
-    for (const path of [join(this.projectRoot,'.openpencil'),this.directory,join(this.directory,'assets'),join(this.directory,'licenses')]) {
+    for (const path of [join(this.projectRoot,'.openpencil'),this.directory,join(this.directory,'assets'),join(this.directory,'licenses'),join(this.directory,'covers')]) {
       await mkdir(path,{recursive:true,mode:0o700});
       const stat = await lstat(path);
       if (!stat.isDirectory() || stat.isSymbolicLink() || await realpath(path) !== path) throw Error('Dataset directories cannot be symlinks.');
@@ -106,19 +121,26 @@ export class CommunityDataset {
           !FORMATS.has(entry.format) || entry.relativePath !== `assets/${entry.sha256}.${entry.format}` ||
           typeof entry.name !== 'string' || typeof entry.author !== 'string' || !KINDS.includes(entry.kind) ||
           !Array.isArray(entry.tags) || !entry.tags.every(tag=>typeof tag==='string') || !Number.isSafeInteger(entry.bytes) || entry.bytes<1 ||
-          !/^[a-f0-9]{64}$/.test(entry.license?.sha256) || entry.license.textPath !== `licenses/${entry.license.sha256}.txt`) throw Error('Invalid Community asset index entry.');
+          !entry.license || (entry.license.status === 'unknown' && entry.license.sha256 == null ? entry.license.responsibility !== 'user' || entry.license.textPath != null :
+            !/^[a-f0-9]{64}$/.test(entry.license.sha256) || entry.license.textPath !== `licenses/${entry.license.sha256}.txt`) ||
+          (entry.cover && (!/^[a-f0-9]{64}$/.test(entry.cover.sha256) || !['png','jpg','jpeg','webp','avif'].includes(entry.cover.format) ||
+            entry.cover.relativePath !== `covers/${entry.cover.sha256}.${entry.cover.format}` || !Number.isSafeInteger(entry.cover.bytes) || entry.cover.bytes<1))) throw Error('Invalid Community asset index entry.');
       ids.add(entry.id);
     }
     return value;
   }
-  async verified(entry) {
+  async verified(entry,{licensePolicy=true} = {}) {
     const bytes = await bytesAt(join(this.directory,entry.relativePath));
     if (hash(bytes) !== entry.sha256 || bytes.length !== entry.bytes) throw Error('Dataset asset checksum changed. Re-ingest the verified source.');
     validateContent(bytes,entry.format);
-    const license = await bytesAt(join(this.directory,entry.license.textPath),256*1024);
-    if (hash(license) !== entry.license.sha256) throw Error('Dataset license checksum changed.');
+    if(licensePolicy && entry.license.status==='unknown' && (await this.settings()).verifyLicenses) throw Error('License unknown. Supply license evidence or disable project license verification under user responsibility.');
+    if (entry.license.textPath) {
+      const license = await bytesAt(join(this.directory,entry.license.textPath),256*1024);
+      if (hash(license) !== entry.license.sha256) throw Error('Dataset license checksum changed.');
+    }
     return bytes;
   }
+  async settings(changes = {}) { await this.ensure(); return communitySettings(this.directory,changes); }
   describe(entry) { return {...entry,path:join(this.directory,entry.relativePath),importMode:importMode(entry.format)}; }
   async search({query='',kind,limit=32,offset=0,previews=true} = {}) {
     if (typeof query !== 'string' || query.length > 512 || (kind && !KINDS.includes(kind)) || !Number.isInteger(limit) || limit<1 || limit>100 || !Number.isInteger(offset) || offset<0) throw Error('Invalid dataset search parameters.');
@@ -130,6 +152,14 @@ export class CommunityDataset {
       const result = this.describe(entry);
       try {
         const bytes = await this.verified(entry); result.available = true;
+        if (previews && entry.cover) {
+          try {
+            const cover=await bytesAt(join(this.directory,entry.cover.relativePath),4*1024*1024);
+            if(hash(cover)!==entry.cover.sha256 || cover.length!==entry.cover.bytes) throw Error('Original cover checksum changed.');
+            validateCover(cover,entry.cover.format);
+            result.coverDataUrl=`data:image/${['jpg','jpeg'].includes(entry.cover.format)?'jpeg':entry.cover.format};base64,${cover.toString('base64')}`;
+          } catch(error) { result.coverError=error.message; }
+        }
         if (previews && bytes.length <= 128*1024 && ['svg','png','jpg','jpeg','webp'].includes(entry.format)) {
           const mime = entry.format === 'svg' ? 'image/svg+xml' : ['jpg','jpeg'].includes(entry.format) ? 'image/jpeg' : `image/${entry.format}`;
           result.previewDataUrl = `data:${mime};base64,${bytes.toString('base64')}`;
@@ -144,13 +174,19 @@ export class CommunityDataset {
     const bytes = suppliedBytes || await bytesAt(args.sourcePath);
     validateContent(bytes,format);
     if (args.expectedSha256 && hash(bytes) !== args.expectedSha256) throw Error('Downloaded asset checksum does not match expectedSha256.');
-    const licenseBytes = args.licensePath ? await bytesAt(args.licensePath,256*1024) : Buffer.from(text(args.licenseText,'license text',256*1024));
+    const licenseBytes = args.licensePath ? await bytesAt(args.licensePath,256*1024) : args.licenseText ? Buffer.from(text(args.licenseText,'license text',256*1024)) : null;
+    if(licenseBytes && licenseBytes.length>256*1024) throw Error('License text exceeds its size limit.');
+    const knownLicense=!!(licenseBytes && typeof args.licenseSpdx==='string' && args.licenseSpdx.trim() && !/^(?:unknown|noassertion)$/i.test(args.licenseSpdx.trim()));
+    if ((await this.settings()).verifyLicenses && !knownLicense) throw Error('License verification requires a known license identifier and retained license text.');
+    const cover=await this.cover(args);
     if (!KINDS.includes(args.kind)) throw Error('Invalid asset kind.');
-    const digest = hash(bytes), licenseHash = hash(licenseBytes);
+    const digest = hash(bytes), licenseHash = licenseBytes ? hash(licenseBytes) : null;
     const entry = { id:hash(`${digest}:${args.sourceUrl}`).slice(0,24), name:text(args.name || basename(args.sourcePath || new URL(args.url).pathname),'name',200),
       kind:args.kind,format,sourceUrl:publicUrl(args.sourceUrl),communityUrl:args.communityUrl ? publicUrl(args.communityUrl,'Community URL') : null,
-      author:text(args.author,'author',200),license:{spdx:text(args.licenseSpdx,'license identifier',100),url:args.licenseUrl ? publicUrl(args.licenseUrl,'license URL') : null,
-        textPath:`licenses/${licenseHash}.txt`,sha256:licenseHash},sha256:digest,bytes:bytes.length,relativePath:`assets/${digest}.${format}`,
+      author:text(args.author,'author',200),license:{status:knownLicense?'recorded':'unknown',responsibility:knownLicense?'license':'user',
+        spdx:args.licenseSpdx ? text(args.licenseSpdx,'license identifier',100) : null,url:args.licenseUrl ? publicUrl(args.licenseUrl,'license URL') : null,
+        textPath:licenseHash?`licenses/${licenseHash}.txt`:null,sha256:licenseHash},sha256:digest,bytes:bytes.length,relativePath:`assets/${digest}.${format}`,
+      ...(cover && {cover:cover.metadata}),
       tags:(args.tags || []).slice(0,32).map(tag=>text(tag,'tag',80)),createdAt:new Date().toISOString() };
     if (entry.communityUrl && !/^https:\/\/www\.figma\.com\/community\/(?:file|plugin)\/\d+(?:\/|$)/.test(entry.communityUrl)) throw Error('Use an actual Figma Community file or plugin URL.');
     await this.ensure();
@@ -163,12 +199,13 @@ export class CommunityDataset {
       const index = await this.index();
       const existing = index.assets.find(asset=>asset.id === entry.id);
       if (existing) {
-        await this.verified(existing);
+        await this.verified(existing,{licensePolicy:false});
+        if(!entry.cover && existing.cover) entry.cover=existing.cover;
         // The bytes are immutable; a second explicit ingestion can refresh attribution and search tags.
         entry.createdAt=existing.createdAt;
         index.assets=index.assets.filter(asset=>asset.id!==entry.id);
       }
-      for (const [path,data] of [[entry.relativePath,bytes],[entry.license.textPath,licenseBytes]]) {
+      for (const [path,data] of [[entry.relativePath,bytes],...(licenseBytes?[[entry.license.textPath,licenseBytes]]:[]),...(cover?[[cover.metadata.relativePath,cover.bytes]]:[])]) {
         const target = join(this.directory,path);
         try { const file = await open(target,'wx',0o600); try { await file.writeFile(data); } finally { await file.close(); } }
         catch (error) { if (error.code !== 'EEXIST') throw error; if (hash(await bytesAt(target)) !== hash(data)) throw Error('Existing dataset object checksum mismatch.'); }
@@ -182,16 +219,55 @@ export class CommunityDataset {
     } finally { await rm(temp,{force:true}); await lock.close(); await rm(lockPath,{force:true}); }
   }
   async fetchBytes(url, limit = LIMIT) {
-    const response = await this.fetchImpl(downloadUrl(url),{redirect:'error',signal:AbortSignal.timeout(30000),headers:{Accept:'application/octet-stream,text/plain,image/svg+xml'}});
-    if (!response.ok) throw Error(`Public asset download failed: HTTP ${response.status}.`);
-    if (Number(response.headers.get('content-length')) > limit) throw Error('Download exceeds its size limit.');
-    const chunks=[]; let size=0;
-    for await (const chunk of response.body) { size+=chunk.length; if(size>limit) { await response.body.cancel?.().catch(()=>{}); throw Error('Download exceeds its size limit.'); } chunks.push(chunk); }
-    return Buffer.concat(chunks);
+    return (await fetchPublicBytes(url,{...this.network,limit})).bytes;
+  }
+  async cover(args) {
+    if(args.coverUrl || args.coverPath) return this.loadCover(args);
+    const page=args.coverPageUrl || args.communityUrl;
+    if(!page) return null;
+    if(!this.coverCache.has(page)) this.coverCache.set(page,this.loadCover(args));
+    return this.coverCache.get(page);
+  }
+  async loadCover(args) {
+    let bytes, sourceUrl=args.coverUrl, pageUrl=args.coverPageUrl || args.communityUrl, method='supplied-source';
+    if (args.coverPath) {
+      if(!sourceUrl) throw Error('A local original cover requires its source coverUrl.');
+      bytes=await bytesAt(args.coverPath,4*1024*1024);
+    } else if (sourceUrl) bytes=await this.fetchBytes(sourceUrl,4*1024*1024);
+    else if (pageUrl) {
+      method='page-og-image';
+      try {
+        const html=(await this.fetchBytes(pageUrl,2*1024*1024)).toString('utf8');
+        for(const tag of html.matchAll(/<meta\s[^>]*>/gi)) {
+          const attrs={};
+          for(const attr of tag[0].matchAll(/([\w:-]+)\s*=\s*(["'])([\s\S]*?)\2/g)) attrs[attr[1].toLowerCase()]=attr[3];
+          if((attrs.property || attrs.name)?.toLowerCase()==='og:image' && attrs.content) {
+            const decoded=attrs.content.replace(/&(?:amp|quot|apos|#(\d+)|#x([a-f\d]+));/gi,(match,decimal,hex)=>
+              decimal || hex ? String.fromCodePoint(parseInt(decimal || hex,hex?16:10)) : ({'&amp;':'&','&quot;':'"','&apos;':"'"}[match.toLowerCase()] || match));
+            sourceUrl=new URL(decoded,pageUrl).href;break;
+          }
+        }
+        if(!sourceUrl) return null;
+        bytes=await this.fetchBytes(sourceUrl,4*1024*1024);
+      } catch(error) {
+        // Original covers are optional; blocked public pages never become invented thumbnails.
+        return null;
+      }
+    } else return null;
+    const format=coverFormat(bytes);
+    if(!format) throw Error('Original cover must be a PNG, JPEG, WebP or AVIF image.');
+    validateCover(bytes,format);
+    const sha256=hash(bytes);
+    return {bytes,metadata:{sourceUrl:publicHttpsUrl(sourceUrl,'cover URL').href,pageUrl:pageUrl?publicUrl(pageUrl,'cover page URL'):null,
+      method,sha256,bytes:bytes.length,format,relativePath:`covers/${sha256}.${format}`,downloadedAt:new Date().toISOString()}};
   }
   async download(args) {
     const bytes = await this.fetchBytes(args.url);
-    const licenseText = args.licenseText || (args.licenseUrl ? (await this.fetchBytes(args.licenseUrl,256*1024)).toString('utf8') : undefined);
+    let licenseText=args.licenseText;
+    if(!licenseText && args.licenseUrl) {
+      try { licenseText=(await this.fetchBytes(args.licenseUrl,256*1024)).toString('utf8'); }
+      catch(error) { if((await this.settings()).verifyLicenses) throw error; }
+    }
     return this.ingest({...args,licenseText},bytes);
   }
   async seed() {
@@ -217,6 +293,7 @@ export class CommunityDataset {
 export async function dispatchCommunityTool(controller,name,args={}) {
   if (!controller.project?.projectRoot) throw Error('Open this project’s managed canvas first.');
   const dataset = new CommunityDataset(controller.project.projectRoot);
+  if (name === 'canvas_community_settings') return dataset.settings(args);
   if (name === 'canvas_community_search') return dataset.search(args);
   if (name === 'canvas_community_ingest') return dataset.ingest(args);
   if (name === 'canvas_community_download') return dataset.download(args);

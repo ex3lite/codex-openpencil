@@ -39,6 +39,13 @@ test('early tool result is retained and every later request keeps the same owner
   f.reply(request,{structuredContent:{version:7}});assert.equal((await status).structuredContent.version,7);
 });
 
+test('tool errors preserve the persistence code for recoverable snapshot rejection',async()=>{
+  const f=fixture();
+  const saving=f.bridge.call('canvas_autosave',{docJson:'{}'});await settle();
+  f.reply(f.calls[0],{isError:true,structuredContent:{code:'DOCUMENT_SNAPSHOT_STALE'},content:[{type:'text',text:'stale snapshot'}]});
+  await assert.rejects(saving,error=>error.code==='DOCUMENT_SNAPSHOT_STALE'&&error.message==='stale snapshot');
+});
+
 test('two app instances cannot replace one another session identity',async()=>{
   const first=fixture(),second=fixture();first.notifyResult();
   second.deliver({method:'ui/notifications/tool-result',params:{_meta:{canvasSession:{...reference,projectRoot:'/workspace/another-chat',sessionId:'another-session'}}}});

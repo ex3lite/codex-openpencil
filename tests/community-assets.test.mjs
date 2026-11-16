@@ -46,13 +46,13 @@ test('dataset refuses storage symlinks and flags changed local bytes rather than
   await mkdir(join(other,'.openpencil')); await symlink(join(root,'.openpencil/community'),join(other,'.openpencil/community'));
   await assert.rejects(new CommunityDataset(other).search(),/symlinks/);
 });
-test('downloads use fixed HTTPS public hosts, never redirects, and preserve exact checked bytes',async t=>{
+test('downloads retain exact checked bytes from public HTTPS sources',async t=>{
   const requests=[];
   const fetchImpl=async(url,options)=>{requests.push({url,options}); return new Response(url.endsWith('LICENSE')?license:svg);};
-  const {dataset}=await fixture(t,{fetchImpl});
+  const {dataset}=await fixture(t,{fetchImpl,lookupImpl:async()=>[{address:'93.184.216.34',family:4}]});
   const result=await dataset.download({...metadata,licenseText:undefined,licenseUrl:'https://raw.githubusercontent.com/example/icons/main/LICENSE',url:'https://raw.githubusercontent.com/example/icons/main/search.svg'});
-  assert.equal(result.format,'svg'); assert.equal(requests.length,2); assert.equal(requests[0].options.redirect,'error');
-  for (const url of ['http://127.0.0.1/a.svg','https://127.0.0.1/a.svg','https://www.figma.com/community/file/123/x','https://raw.githubusercontent.com/x.svg?token=secret']) {
+  assert.equal(result.format,'svg'); assert.equal(requests.length,2); assert.equal(requests[0].options.redirect,'manual');
+  for (const url of ['http://127.0.0.1/a.svg','https://127.0.0.1/a.svg','https://www.figma.com/community/file/123/x']) {
     await assert.rejects(dataset.download({...metadata,url}));
   }
   await assert.rejects(dataset.download({...metadata,url:'https://raw.githubusercontent.com/example/x.svg',expectedSha256:'0'.repeat(64)}),/checksum/);
@@ -90,4 +90,58 @@ test('App Figma transport verifies bytes and keeps binary payload out of model t
   assert.deepEqual(communityTools.find(tool=>tool.name==='canvas_community_file')._meta.ui.visibility,['app']);
   await writeFile(asset.path,'tampered');
   await assert.rejects(communityAssetFile(controller,{assetId:asset.id}),/checksum/);
+});
+
+const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jWZkAAAAASUVORK5CYII=','base64');
+test('license verification defaults on; explicit project opt-out retains unknown status and known evidence',async t=>{
+ const {dataset,sourcePath}=await fixture(t);
+ const unknown={...metadata,sourcePath,licenseText:undefined,licenseSpdx:undefined};
+ assert.deepEqual(await dataset.settings(),{verifyLicenses:true});
+ await assert.rejects(dataset.ingest(unknown),/License verification/);
+ await dataset.settings({verifyLicenses:false});
+ const entry=await dataset.ingest(unknown);
+ assert.equal(entry.license.status,'unknown');assert.equal(entry.license.responsibility,'user');assert.equal(entry.license.spdx,null);
+ assert.equal((await dataset.get(entry.id)).entry.id,entry.id);
+ await dataset.settings({verifyLicenses:true});
+ assert.equal((await dataset.search()).assets[0].available,false);
+ const upgraded=await dataset.ingest({...metadata,sourcePath});assert.equal(upgraded.license.status,'recorded');
+ await dataset.settings({verifyLicenses:false});
+ const partial=await dataset.ingest({...metadata,sourcePath,licenseSpdx:'NOASSERTION'});
+ assert.equal(partial.license.status,'unknown');assert.ok(partial.license.sha256);
+ assert.equal((await dataset.search()).assets[0].available,true);
+});
+test('original Community og:image cover is stored with provenance and checksum independently of asset preview',async t=>{
+ const requests=[];
+ const fetchImpl=async url=>{requests.push(url);return new Response(url.includes('/community/')?'<meta content="https://images.example/cover.png?a=1&amp;b=2" property="og:image">':png);};
+ const {dataset,sourcePath,root}=await fixture(t,{fetchImpl,lookupImpl:async()=>[{address:'93.184.216.34',family:4}]});
+ const entry=await dataset.ingest({...metadata,sourcePath,communityUrl:'https://www.figma.com/community/file/123/example'});
+ assert.equal(entry.cover.method,'page-og-image');assert.equal(entry.cover.sourceUrl,'https://images.example/cover.png?a=1&b=2');
+ assert.equal(entry.cover.pageUrl,entry.communityUrl);assert.equal(requests.length,2);
+ const stored=join(root,'.openpencil/community',entry.cover.relativePath);
+ assert.deepEqual(await readFile(stored),png);
+ const found=(await dataset.search()).assets[0];assert.match(found.coverDataUrl,/^data:image\/png;base64,/);assert.match(found.previewDataUrl,/^data:image\/svg/);
+ await writeFile(stored,'changed');
+ const changed=(await dataset.search()).assets[0];assert.equal(changed.available,true);assert.equal(changed.coverDataUrl,undefined);assert.match(changed.coverError,/checksum/);
+});
+test('supplied original cover keeps exact bytes; local cover requires original source URL',async t=>{
+ const {dataset,sourcePath,root}=await fixture(t);const coverPath=join(root,'cover.png');await writeFile(coverPath,png);
+ await assert.rejects(dataset.ingest({...metadata,sourcePath,coverPath}),/coverUrl/);
+ const entry=await dataset.ingest({...metadata,sourcePath,coverPath,coverUrl:'https://images.example/original.png'});
+ assert.equal(entry.cover.method,'supplied-source');assert.deepEqual(await readFile(join(root,'.openpencil/community',entry.cover.relativePath)),png);
+});
+test('original AVIF covers retain exact bytes, validate ftyp brands and never become asset formats',async t=>{
+ const {dataset,sourcePath,root}=await fixture(t);const coverPath=join(root,'original.avif');
+ const ftyp=(major,compatible='mif1')=>{const bytes=Buffer.alloc(24);bytes.writeUInt32BE(24,0);bytes.write('ftyp',4);bytes.write(major,8);bytes.write(compatible,16);bytes.write('miaf',20);return bytes;};
+ for(const [major,compatible] of [['avif','mif1'],['avis','mif1'],['mif1','avif']]) {
+  const bytes=ftyp(major,compatible);await writeFile(coverPath,bytes);
+  const entry=await dataset.ingest({...metadata,sourcePath,coverPath,coverUrl:'https://images.example/original.avif'});
+  assert.equal(entry.cover.format,'avif');assert.deepEqual(await readFile(join(root,'.openpencil/community',entry.cover.relativePath)),bytes);
+  const found=(await dataset.search()).assets[0];assert.equal(found.coverDataUrl,`data:image/avif;base64,${bytes.toString('base64')}`);
+ }
+ for(const bytes of [ftyp('heic','mif1'),Buffer.from('not AVIF despite avif text'),(()=>{const bytes=ftyp('avif');bytes.writeUInt32BE(4096,0);return bytes;})()]) {
+  await writeFile(coverPath,bytes);await assert.rejects(dataset.ingest({...metadata,sourcePath,coverPath,coverUrl:'https://images.example/original.avif'}),/Original cover/);
+ }
+ await writeFile(coverPath,ftyp('avif'));
+ await assert.rejects(dataset.ingest({...metadata,sourcePath:coverPath}),/Unsupported asset format/);
+ assert.ok(!communityTools.find(tool=>tool.name==='canvas_community_download').inputSchema.properties.format.enum.includes('avif'));
 });

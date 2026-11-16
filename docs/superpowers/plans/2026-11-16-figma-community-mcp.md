@@ -41,5 +41,7 @@ Files: library UI, docs/skill, plugin metadata, smoke/evidence.
 
 - [x] Search Community in the library UI through MCP directly, without sending a chat prompt.
 - [x] Verify real search → detail → acquired original/reference → global library/project links.
-- [ ] Install and verify Codex loader (package checks, 308 tests and isolated native smoke passed).
-- [ ] Continue the requested editable Apple-style page using the new catalog tools; report source versus editable layers precisely.
+- [x] Install and verify Codex loader: 0.11.0, all 85 installed files match, new resource URI and catalog tools present. Package checks, 308 tests and isolated native smoke passed.
+- [x] Continue the requested editable Apple-style page using the new catalog tools; report source versus editable layers precisely.
+
+Acceptance evidence lives outside the source repository in the active workspace under `outputs/openbrush/0.11.0/`. Live direct MCP search/get/acquire/check passed for public Community ID 1382343443870598429. UI search and original covers were visually verified in a separate local MCP App harness, with zero chat messages and empty explicit attachments. A fresh Codex loader read the installed resource; the running old chat still needs reconnecting before native-host 0.11 UI acceptance. The Apple-style page has 109 editable nodes, including 60 text layers and a library-imported SVG, and was saved/reopened without modifying its source.

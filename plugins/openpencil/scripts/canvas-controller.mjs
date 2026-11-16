@@ -20,6 +20,7 @@ import { forward, errorReply } from './transport.mjs';
 import { readCanvasSelection } from './canvas-selection.mjs';
 import { importCanvasImage } from './canvas-images.mjs';
 import { CanvasFonts, fontTools } from './canvas-fonts.mjs';
+import { iconPackTools, dispatchIconPackTool } from './icon-packs.mjs';
 import { prepareCanvasBrowser, browserLaunchStatus } from './browser-launch.mjs';
 import { prepareCodegen, completeCodegen, pollCodegen, cancelCodegen, codegenSummary, frameworks } from './canvas-codegen.mjs';
 
@@ -34,6 +35,7 @@ export const canvasTools = [
     annotations:{destructiveHint:false,openWorldHint:false},_meta:{ui:{visibility:['app']}}},
   ...communityTools,
   ...fontTools,
+  ...iconPackTools,
   ...workspaceTools,
   { name: 'canvas_detach_source', description: 'App-only: detach the previous save destination after a successful New/Open/import. Does not write or delete any file.',
     inputSchema: schema({}), annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
@@ -200,6 +202,7 @@ export class CanvasController {
     if(name==='canvas_history' || name==='canvas_history_status') return toolResult(await this.persistence.list());
     if(name==='canvas_history_restore') return toolResult(await this.restoreHistory(args));
     if(name==='canvas_community_file') return communityAssetFile(this,args);
+    if(name.startsWith('canvas_icon_pack_'))return toolResult(await dispatchIconPackTool(this,name,args));
     if(name.startsWith('canvas_community_')) {
       const result=await dispatchCommunityTool(this,name,args);
       if(name==='canvas_community_settings'&&(args.autonomous!==undefined||args.verifyLicenses!==undefined))this.fonts?.schedule(undefined,{force:true});

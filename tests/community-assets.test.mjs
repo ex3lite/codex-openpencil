@@ -129,6 +129,26 @@ test('supplied original cover keeps exact bytes; local cover requires original s
  const entry=await dataset.ingest({...metadata,sourcePath,coverPath,coverUrl:'https://images.example/original.png'});
  assert.equal(entry.cover.method,'supplied-source');assert.deepEqual(await readFile(join(root,'library',entry.cover.relativePath)),png);
 });
+test('ordinary FIG and image resources retain original Figma identity; old entries derive it without migration',async t=>{
+ const {dataset,root}=await fixture(t,{fetchImpl:async()=>new Response('<html></html>'),lookupImpl:async()=>[{address:'93.184.216.34',family:4}]});
+ const figPath=join(root,'ordinary.fig');await writeFile(figPath,'fig-kiwi-source');
+ const communityUrl='https://www.figma.com/community/file/800815864899415771/original';
+ const fig=await dataset.ingest({...metadata,kind:'reference',sourcePath:figPath,communityUrl});
+ assert.equal(fig.originalCommunityId,'800815864899415771');
+ const pngPath=join(root,'ordinary.png');await writeFile(pngPath,png);
+ const image=await dataset.ingest({...metadata,kind:'reference',sourcePath:pngPath,sourceUrl:'https://www.figma.com/design/AbCdE1234567/source'});
+ assert.equal(image.originalCommunityId,undefined);assert.equal(image.figmaFileKey,'AbCdE1234567');
+ const path=join(root,'library','index.json'),index=JSON.parse(await readFile(path));
+ for(const entry of index.assets){delete entry.originalCommunityId;delete entry.figmaFileKey;}
+ await writeFile(path,JSON.stringify(index));
+ assert.equal((await dataset.get(fig.id)).entry.originalCommunityId,'800815864899415771');
+ assert.equal((await dataset.get(image.id)).entry.figmaFileKey,'AbCdE1234567');
+ assert.equal((await dataset.get(image.id)).entry.originalCommunityId,undefined);
+ const saved=await readFile(path,'utf8');assert.equal(saved,JSON.stringify(index));
+ await assert.rejects(dataset.ingest({...metadata,sourcePath:pngPath,communityUrl,originalCommunityId:'123456'}),/must match/);
+ await assert.rejects(dataset.ingest({...metadata,sourcePath:pngPath,originalCommunityId:'made-up'}),/must match/);
+ await assert.rejects(dataset.ingest({...metadata,sourcePath:pngPath,sourceUrl:'https://www.figma.com/design/AbCdE1234567/source',originalCommunityId:'AbCdE1234567'}),/numeric Community/);
+});
 test('original AVIF covers retain exact bytes, validate ftyp brands and never become asset formats',async t=>{
  const {dataset,sourcePath,root}=await fixture(t);const coverPath=join(root,'original.avif');
  const ftyp=(major,compatible='mif1')=>{const bytes=Buffer.alloc(24);bytes.writeUInt32BE(24,0);bytes.write('ftyp',4);bytes.write(major,8);bytes.write(compatible,16);bytes.write('miaf',20);return bytes;};

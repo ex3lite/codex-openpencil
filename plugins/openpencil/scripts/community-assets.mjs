@@ -20,7 +20,7 @@ const KINDS = ['icon', 'ui-kit', 'reference', 'document'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const string = { type: 'string' };
 const scope = {type:'string',enum:['global','project']};
-const metadata = { name: string, kind: { type:'string', enum:KINDS }, sourceUrl:string, communityUrl:string,
+const metadata = { name: string, kind: { type:'string', enum:KINDS }, sourceUrl:string, communityUrl:string, originalCommunityId:string, figmaFileKey:string,
   coverUrl:string, coverPath:string, coverPageUrl:string, author:string, licenseSpdx:string, licenseUrl:string, licenseText:string, tags:{type:'array',items:string,maxItems:32} };
 const tool = (name, description, properties, required = [], readOnly = false, modelOnly = false) => ({
   name, description, inputSchema:{ type:'object', properties, required, additionalProperties:false },
@@ -66,7 +66,7 @@ async function bytesAt(path, limit = DOCUMENT_LIMIT) {
     return bytes;
   } finally { await handle.close(); }
 }
-function validateContent(bytes, format) {
+export function validateContent(bytes, format) {
   if (!FORMATS.has(format) || !bytes.length || bytes.length > formatLimit(format)) throw Error('Unsupported asset format or size.');
   if (format === 'svg') {
     const svg = bytes.toString('utf8');
@@ -106,6 +106,27 @@ function validateCover(bytes,format) {
   } else validateContent(bytes,format);
 }
 const importMode = format => format === 'svg' ? 'vector' : format === 'op' ? 'document' : format === 'fig' ? 'figma' : 'image';
+
+function originalCommunityIdentity(args) {
+  let originalCommunityId=null,figmaFileKey=null;
+  for(const value of [args.communityUrl,args.sourceUrl]) {
+    if(!value)continue;
+    let url;try{url=new URL(value);}catch{continue;}
+    if(url.protocol!=='https:'||!['www.figma.com','figma.com'].includes(url.hostname))continue;
+    originalCommunityId ||= url.pathname.match(/^\/community\/file\/(\d+)(?:\/|$)/)?.[1] || null;
+    figmaFileKey ||= url.pathname.match(/^\/(?:design|file)\/([A-Za-z0-9]+)(?:\/|$)/)?.[1] || null;
+  }
+  if(args.originalCommunityId!==undefined && args.originalCommunityId!==null && args.originalCommunityId!==originalCommunityId)throw Error('Original Figma Community ID must match the retained numeric Community file URL.');
+  if(args.figmaFileKey!==undefined && args.figmaFileKey!==null && args.figmaFileKey!==figmaFileKey)throw Error('Figma file key must match the retained original Figma file URL.');
+  return {...(originalCommunityId && {originalCommunityId}),...(figmaFileKey && {figmaFileKey})};
+}
+
+function sourcePackMetadata(value) {
+  if(!value || typeof value!=='object' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(value.id) ||
+    !/^[a-f0-9]{64}$/.test(value.archiveSha256) || !/^[0-9]+$/.test(value.originalCommunityId)) throw Error('Invalid source icon pack provenance.');
+  return {id:value.id,revision:text(value.revision,'pack revision',200),key:text(value.key,'pack icon key',300),
+    originalCommunityId:value.originalCommunityId,archiveSha256:value.archiveSha256};
+}
 
 export class ProjectCommunityDataset {
   constructor(projectRoot, { fetchImpl, lookupImpl } = {}) { this.projectRoot = projectRoot; this.network = {fetchImpl,lookupImpl}; this.coverCache=new Map(); this.directory = join(projectRoot,'.openpencil','community'); }
@@ -149,7 +170,7 @@ export class ProjectCommunityDataset {
     return bytes;
   }
   async settings(changes = {}) { await this.ensure(); return communitySettings(this.directory,changes); }
-  describe(entry) { return {...entry,path:join(this.directory,entry.relativePath),importMode:importMode(entry.format)}; }
+  describe(entry) { return {...entry,...originalCommunityIdentity(entry),path:join(this.directory,entry.relativePath),importMode:importMode(entry.format)}; }
   async search({query='',kind,limit=32,offset=0,previews=true,assetIds,additionalMatches} = {}) {
     if (typeof query !== 'string' || query.length > 512 || (kind && !KINDS.includes(kind)) || !Number.isInteger(limit) || limit<1 || limit>100 || !Number.isInteger(offset) || offset<0) throw Error('Invalid dataset search parameters.');
     const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
@@ -188,10 +209,11 @@ export class ProjectCommunityDataset {
     if ((await this.settings()).verifyLicenses && !knownLicense) throw Error('License verification requires a known license identifier and retained license text.');
     const cover=await this.cover(args);
     if (!KINDS.includes(args.kind)) throw Error('Invalid asset kind.');
-    const digest = hash(bytes), licenseHash = licenseBytes ? hash(licenseBytes) : null;
+    const digest = hash(bytes), licenseHash = licenseBytes ? hash(licenseBytes) : null,originalIdentity=originalCommunityIdentity(args);
     const entry = { id:hash(`${digest}:${args.sourceUrl}`).slice(0,24), name:text(args.name || basename(args.sourcePath || new URL(args.url).pathname),'name',200),
       kind:args.kind,format,...(args.downloadUrl && {downloadUrl:publicUrl(args.downloadUrl,'download URL')}),sourceUrl:publicUrl(args.sourceUrl),communityUrl:args.communityUrl ? publicUrl(args.communityUrl,'Community URL') : null,
       ...(args.downloadUrl && {download:{url:publicUrl(args.downloadUrl,'download URL'),requestedUrl:publicUrl(args.url,'requested download URL'),downloadedAt:new Date().toISOString()}}),
+      ...originalIdentity,...(args.sourcePack && {sourcePack:sourcePackMetadata(args.sourcePack)}),
       author:text(args.author,'author',200),license:{status:knownLicense?'recorded':'unknown',responsibility:knownLicense?'license':'user',
         spdx:args.licenseSpdx ? text(args.licenseSpdx,'license identifier',100) : null,url:args.licenseUrl ? publicUrl(args.licenseUrl,'license URL') : null,
         textPath:licenseHash?`licenses/${licenseHash}.txt`:null,sha256:licenseHash},sha256:digest,bytes:bytes.length,relativePath:`assets/${digest}.${format}`,

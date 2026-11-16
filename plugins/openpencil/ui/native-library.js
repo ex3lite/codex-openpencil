@@ -23,6 +23,7 @@ const nativeLibrary = (() => {
     autoLabel.append(auto,make('span','Автоподбор ресурсов агентом'));details.append(autoLabel);
     drawer.append(details);
     if(typeof nativeFonts!=='undefined')await nativeFonts.section({drawer,make,button});
+    if(typeof nativeIconPacks!=='undefined')await nativeIconPacks.section({drawer,make,button});
     let scope='global';
     const scopes=make('div',null,'library-scopes');
     const all=button('Вся библиотека',()=>setScope('global')),project=button('В этом проекте',()=>setScope('project'));
@@ -38,9 +39,11 @@ const nativeLibrary = (() => {
       results.replaceChildren();
       if(!data.assets.length)results.append(make('p','Ресурсов пока нет. Найдите нужное в Community через Codex или добавьте стартовые иконки.'));
       for(const asset of data.assets.slice().sort((a,b)=>(a.kind==='ui-kit'?-1:0)-(b.kind==='ui-kit'?-1:0)||Number(!!b.cover)-Number(!!a.cover))){
-        const item=make('article',null,'library-card');
+        const compactIcon=asset.kind==='icon'&&asset.previewDataUrl;
+        const item=make('article',null,'library-card'+(compactIcon?' library-icon-card':''));
         const cover=make('div',null,'library-cover');
-        if(asset.coverDataUrl){const preview=document.createElement('img');preview.src=asset.coverDataUrl;preview.alt=`Обложка ${asset.name}`;preview.className='library-cover-image';cover.append(preview);}
+        if(compactIcon){const preview=document.createElement('img');preview.src=asset.previewDataUrl;preview.alt=asset.name;preview.className='asset-preview';cover.append(preview);}
+        else if(asset.coverDataUrl){const preview=document.createElement('img');preview.src=asset.coverDataUrl;preview.alt=`Обложка ${asset.name}`;preview.className='library-cover-image';cover.append(preview);}
         else cover.append(make('span','Оригинальная обложка недоступна','library-cover-empty'));
         item.append(cover);
         const body=make('div',null,'library-card-body'),actions=make('div',null,'library-card-actions');

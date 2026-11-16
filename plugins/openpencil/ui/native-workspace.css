@@ -59,3 +59,12 @@ body[data-drawer=true]:has(.library-grid) #editor-viewport{right:0}
 .library-scopes{display:flex;gap:8px;margin:16px 0}.library-scopes button[aria-pressed=true]{background:#2868dd;color:white;border-color:#2868dd}
 
 .library-card-index{font-size:12px;color:var(--muted);line-height:1.5}
+.pack-icons{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px;margin:16px 0}
+.pack-icon{display:flex;flex-direction:column;gap:8px;align-items:start;padding:12px;border:1px solid var(--line);border-radius:10px;min-width:0}
+.pack-icon small{overflow-wrap:anywhere}
+.pack-browser select{max-width:130px;background:var(--base);color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px}
+.pack-browser .library-search{flex-wrap:wrap}.pack-browser .library-search input{flex-basis:220px}
+.library-icon-card .library-cover{aspect-ratio:auto;min-height:96px}
+#workspace-drawer .library-icon-card .asset-preview{margin:0}
+.library-fonts{border:1px solid var(--line);border-radius:8px;padding:12px;margin:16px 0}
+.library-fonts summary{cursor:pointer;font-weight:600}

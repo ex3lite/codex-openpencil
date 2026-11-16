@@ -12,8 +12,9 @@ payload manifest, version and platform before configuring or starting it.
 
 ## Interactive canvas
 
-1. In Codex, call `open_canvas`, optionally with the user's absolute `.op`
-   path, and use its MCP App thread entrypoint. Version 0.4 embeds the original
+1. In Codex, call `open_canvas` with `projectRoot` set to this chat's actual
+   workspace, optionally with a registered `documentId` or an absolute `.op`
+   path inside that workspace, and use its MCP App thread entrypoint. Version 0.5 embeds the original
    Rust/CanvasKit editor directly in the UI resource. It transports document
    and local asset requests through the app-only `canvas_native_request` tool;
    it does not embed a localhost iframe. The source is copied into a recovery
@@ -35,9 +36,14 @@ payload manifest, version and platform before configuring or starting it.
 3. Use the UI resource/thread entrypoint, or show the returned local `panelUrl`
    in hosts without MCP Apps. Verify `canvas_status` and `get_editor_state`:
    they must describe the same managed document before editing.
-4. Each conversation keeps one canvas. Use another chat for a different document.
-   Recovery drafts survive in `~/.codex-openpencil/sessions/`. A stopped session's
-   URL is temporary; reopen its recovery file in a new session.
+4. Each conversation keeps one canvas bound to its Codex project. Use
+   `canvas_documents` and the project menu to switch documents after flushing
+   edits. The catalog and recovery drafts live in `<projectRoot>/.openpencil/`;
+   select the registered document ID to restore its draft and save destination.
+   Import an external file explicitly with `canvas_document_import`, which copies
+   it into this project's `designs/` directory. One document has one writer;
+   subagents join that owner's canvas through scoped `canvas_agent` leases.
+   A stopped session's URL is temporary. Never use a global latest document.
 5. Reconnect or start a fresh turn after upgrading the plugin. If this chat
    still has a closed or old MCP transport, reload Codex before opening the app. Resource loading and
    visibly displayed embedded host UI are separate verification steps.
@@ -51,7 +57,8 @@ tools through Codex's actual plugin loader. For a desktop startup error such as
 `npm run host-check` from that repository. Do not rewrite unrelated MCP settings.
 A successful fresh host check does not prove this existing chat has reloaded.
 If this chat has not loaded newly installed MCP tools yet,
-`npm run canvas` in the repository provides the same editable canvas and accepts
+`npm run canvas -- --project-root /absolute/current-project` in the repository
+provides the same editable canvas and accepts
 native tool requests through a persistent terminal's stdin. Use that entry point
 to complete the design now, then explain that reconnect loads the installed tools.
 Never mistake a successful install for a verified live canvas.

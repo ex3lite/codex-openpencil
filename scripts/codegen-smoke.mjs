@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { CanvasController } from '../plugins/openpencil/scripts/canvas-controller.mjs';
+import { resolveRuntime } from '../plugins/openpencil/scripts/editor-runtime.mjs';
 
 const artifacts = resolve('artifacts'); await mkdir(artifacts,{recursive:true});
 const output = await mkdtemp(join(artifacts,'codegen-'));
+const runtime = await resolveRuntime();
+process.env.OPENPENCIL_EDITOR_RUNTIME_DIR = runtime.root;
+process.env.OPENPENCIL_CODEX_STATE_DIR = join(output, 'state');
 const filePath = join(output,'design.op');
 await writeFile(filePath,JSON.stringify({version:'0.8.5',children:[{
   id:'card',type:'frame',name:'Code panel QA',x:40,y:40,width:640,height:400,
@@ -23,7 +27,7 @@ const call = async (name,args={}) => {
   return reply.result;
 };
 try {
-  const opened = await controller.open({filePath});
+  const opened = await controller.open({filePath,projectRoot:output});
   for (const [index,framework,extension] of [[1,'html','html'],[2,'react','tsx'],[3,'vue','vue']]) {
     const live = await controller.session.document();
     const prepared = await call('canvas_codegen_prepare',{uiRequestId:`host-123-${index}`,framework,pageId:'0',nodeIds:['card'],docJson:JSON.stringify(live.document)});

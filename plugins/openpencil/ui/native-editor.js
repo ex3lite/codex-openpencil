@@ -2,6 +2,7 @@
 const nativeEditor = (() => {
   let ready = false, saving = false, dirty = false, source = null, token;
   let generation = 0, revision = 0, closed = false, identity = 0;
+  let replacementBarrier = Promise.resolve();
   const snapshots = new Map(), listeners = new Set();
   const element = id => document.getElementById(id);
   const value = result => result.structuredContent ?? JSON.parse(result.content.find(item => item.type === 'text').text);
@@ -54,7 +55,7 @@ const nativeEditor = (() => {
     } catch (error) { status(`Не удалось сохранить: ${error.message}`, true); }
     finally { saving = false; }
   }
-  function receive(raw) {
+  function receive(raw, replacement) {
     let event; try { event = JSON.parse(raw); } catch { return; }
     if (event.type === 'op-bridge/listening') send({ type: 'op-bridge/init', token });
     if (event.type === 'op-bridge/ready') {
@@ -75,7 +76,9 @@ const nativeEditor = (() => {
     if (event.type === 'op-shell/document-replaced') {
       identity++; source = null; dirty = true; status('');
       element('save-dialog').close();
-      void call('canvas_detach_source').catch(error => status(error.message, true));
+      void replacement.previous.then(() => call('canvas_detach_source')).then(replacement.resolve).catch(error => {
+        replacement.reject(error); status('Не удалось переключить документ: ' + error.message, true);
+      });
     }
     if (event.type === 'op-shell/save') void save();
     if (event.type === 'op-shell/save-as') saveDialog();
@@ -101,9 +104,23 @@ const nativeEditor = (() => {
     configure(result) {
       source = result.structuredContent?.filePath || null; token = result._meta?.canvas?.token;
       if (!token) throw Error('Локальный редактор не выдал сеанс. Обновите плагин в Codex.');
-      OpenPencilEngine.onEvent(raw => queueMicrotask(() => receive(raw)));
+      OpenPencilEngine.onEvent(raw => {
+        // Block native snapshot transport synchronously, before the next Rust
+        // sync task can checkpoint the new document under the previous identity.
+        let replacement;
+        if (JSON.parse(raw).type === 'op-shell/document-replaced') {
+          replacement={previous:replacementBarrier};
+          const next=new Promise((resolve,reject)=>{replacement.resolve=resolve;replacement.reject=reject;});
+          next.catch(()=>{});
+          replacementBarrier=replacement.previous.then(()=>next);
+          replacementBarrier.catch(() => {});
+        }
+        queueMicrotask(() => receive(raw,replacement));
+      });
     },
     get ready() { return ready && !closed; }, get saving() { return saving; }, get source() { return source; },
+    rebind(result) { identity++; source = result.filePath || null; dirty = false; updateName(); status('Макет открыт в этом проекте.'); },
+    syncBarrier() { return replacementBarrier; },
     send, flush, call, status,
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };

@@ -13,7 +13,7 @@
   // CanvasKit and the wasm-bindgen module are the exact existing runtime.
   const initializeCanvasKit=window.CanvasKitInit;
   window.CanvasKitInit=options=>initializeCanvasKit({...options,wasmBinary:new Uint8Array(ckBytes)});
-  const resize=()=>{const dpr=Math.min(devicePixelRatio||1,Math.max(1,Math.sqrt(4000000/(innerWidth*innerHeight))));canvas.width=Math.round(innerWidth*dpr);canvas.height=Math.round(innerHeight*dpr);canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px';window.__opCanvasScale=dpr;};
+  const resize=()=>{const box=document.getElementById('editor-viewport');const w=box.clientWidth,h=box.clientHeight;const dpr=Math.min(devicePixelRatio||1,Math.max(1,Math.sqrt(4000000/(w*h))));canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);canvas.style.width=w+'px';canvas.style.height=h+'px';window.__opCanvasScale=dpr;};
   resize();await OpenPencilEngine.init({module_or_path:engineBytes});
   nativeEditor.configure(session);
   status.textContent='Запуск полного редактора…';

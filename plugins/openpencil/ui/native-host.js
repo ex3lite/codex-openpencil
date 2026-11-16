@@ -33,7 +33,7 @@ const nativeBridge = (() => {
     async init() {
       if (initialized) return initialized;
       if (typeof OP_PREVIEW !== 'undefined') return { hostCapabilities: {}, hostContext: {} };
-      initialized = await request('ui/initialize', { appInfo: { name: 'OpenPencil', version: '0.4.2' },
+      initialized = await request('ui/initialize', { appInfo: { name: 'OpenPencil', version: '0.5.0' },
         appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' });
       capabilities = initialized.hostCapabilities || {};
       context = { ...initialized.hostContext, ...context };
@@ -50,6 +50,7 @@ const nativeBridge = (() => {
     request,
     get capabilities() { return capabilities; },
     get context() { return context; },
+    setDisplayMode(mode) { context = { ...context, displayMode: mode }; for (const listener of contextListeners) listener(context); },
     onContext(listener) { contextListeners.add(listener); return () => contextListeners.delete(listener); },
     onTeardown(listener) { teardown = listener; },
   };

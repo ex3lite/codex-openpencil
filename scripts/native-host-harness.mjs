@@ -1,10 +1,11 @@
+import {dirname,resolve} from 'node:path';
 // Local protocol acceptance harness, not the Codex desktop host.
 import http from 'node:http';
 import {randomBytes} from 'node:crypto';
 import {CanvasController} from '../plugins/openpencil/scripts/canvas-controller.mjs';
 import {nativeHtml} from '../plugins/openpencil/scripts/native-canvas.mjs';
 const controller=new CanvasController();
-await controller.open({filePath:process.argv[2]});
+await controller.open({filePath:resolve(process.argv[2]),projectRoot:process.argv[3]||dirname(resolve(process.argv[2]))});
 const html=await nativeHtml(),key=randomBytes(24).toString('hex');
 const report={initialized:0,methods:{},contexts:[],messages:[]};
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));};
@@ -41,10 +42,11 @@ const host=http.createServer(async(req,res)=>{
    const message=JSON.parse(Buffer.concat(parts));
    report.methods[message.method]=(report.methods[message.method]||0)+1;
    const reply=result=>json(res,200,{jsonrpc:'2.0',id:message.id,result});
-   if(message.method==='ui/initialize'){report.initialized++;reply({protocolVersion:'2026-01-26',hostInfo:{name:'local-test-harness',version:'1'},hostCapabilities:{serverTools:{},message:{text:{}},updateModelContext:{}},hostContext:{theme:'dark',displayMode:'fullscreen'}});return;}
+   if(message.method==='ui/initialize'){report.initialized++;reply({protocolVersion:'2026-01-26',hostInfo:{name:'local-test-harness',version:'1'},hostCapabilities:{serverTools:{},message:{text:{}},updateModelContext:{}},hostContext:{theme:'dark',displayMode:'inline',availableDisplayModes:['inline','fullscreen']}});return;}
    if(message.method==='ui/notifications/initialized'){reply({});return;}
    if(message.method==='ui/update-model-context'){report.contexts.push(message.params);report.contexts=report.contexts.slice(-5);reply({});return;}
    if(message.method==='ui/message'){report.messages.push(message.params);reply({});return;}
+   if(message.method==='ui/request-display-mode'){report.displayMode=message.params.mode;reply({mode:message.params.mode});return;}
    if(message.method==='tools/call'){json(res,200,await controller.enqueue(()=>controller.dispatch(message)));return;}
    throw Error('Unsupported host method');
   }

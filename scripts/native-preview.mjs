@@ -1,9 +1,10 @@
+import {dirname,resolve} from 'node:path';
 import http from 'node:http';
 import {randomBytes} from 'node:crypto';
 import {CanvasController} from '../plugins/openpencil/scripts/canvas-controller.mjs';
 import {nativeHtml} from '../plugins/openpencil/scripts/native-canvas.mjs';
 const controller=new CanvasController();
-await controller.open({filePath:process.argv[2]});
+await controller.open({filePath:resolve(process.argv[2]),projectRoot:process.argv[3]||dirname(resolve(process.argv[2]))});
 const html=await nativeHtml(),route='/'+randomBytes(24).toString('hex');let origin;
 const server=http.createServer(async(req,res)=>{
  const reply=(code,body,type='application/json')=>{res.writeHead(code,{'Content-Type':type,'Cache-Control':'no-store'});res.end(typeof body==='string'?body:JSON.stringify(body));};

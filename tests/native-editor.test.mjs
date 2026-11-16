@@ -76,3 +76,15 @@ test('a save completing after replacement cannot reattach the previous path',asy
  assert.equal(f.editor.source,null);
  assert.equal(f.calls.filter(c=>c.type==='op-bridge/save-committed').length,0);
 });
+test('rapid document replacements await their own detach acknowledgements in order',async()=>{
+ const detaches=[];
+ const f=fixture(name=>name==='canvas_detach_source'?new Promise((resolve,reject)=>detaches.push({resolve,reject})):{});
+ f.emit({type:'op-shell/document-replaced'});const first=f.editor.syncBarrier();
+ f.emit({type:'op-shell/document-replaced'});const second=f.editor.syncBarrier();
+ let one=false,two=false;first.then(()=>one=true);second.then(()=>two=true,()=>{});
+ await settle();assert.equal(detaches.length,1);
+ detaches[0].resolve({});await settle();
+ assert.equal(one,true);assert.equal(two,false);assert.equal(detaches.length,2);
+ detaches[1].reject(Error('second failed'));
+ await assert.rejects(second,/second failed/);assert.equal(two,false);
+});

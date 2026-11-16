@@ -25,3 +25,12 @@ test('bundled original editor exposes every required host adapter function',asyn
  vm.runInContext(await readFile(new URL('../plugins/openpencil/ui/native-engine.js',import.meta.url),'utf8'),context);
  for(const name of ['init','mount','onEvent','receive','documentName','selection'])assert.equal(typeof context.OpenPencilEngine[name],'function',name);
 });
+
+test('native resource permits embedded SVG decoding without external resource origins',async()=>{
+ const {CanvasController}=await import('../plugins/openpencil/scripts/canvas-controller.mjs');
+ const resource=await new CanvasController({nativeHtmlLoader:async()=>'<canvas></canvas>'}).resource();
+ const csp=resource.contents[0]._meta.ui.csp;
+ assert.deepEqual(csp.resourceDomains,['blob:','data:']);
+ assert.deepEqual(csp.connectDomains,[]);
+ assert.deepEqual(csp.frameDomains,[]);
+});

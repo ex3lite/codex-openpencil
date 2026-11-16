@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, readFile } from 'node:fs/promises';
-import { extname, isAbsolute } from 'node:path';
+import { lstat, readFile, realpath } from 'node:fs/promises';
+import { extname, isAbsolute, relative, sep } from 'node:path';
 import { readCanvasSelection } from './canvas-selection.mjs';
 import { snapshotMatches } from './document-format.mjs';
 
@@ -35,7 +35,8 @@ export async function prepareCodegen(controller, args) {
   if (after.version !== live.version) fail('The design changed during code export. No request was sent.');
   const requestId = randomUUID();
   const context = { requestId, framework: args.framework, pageId: selection.pageId, nodeIds,
-    expectedVersion: live.version, canvasFile: session.source, recoveryPath: session.draft };
+    expectedVersion: live.version, canvasFile: session.source, recoveryPath: session.draft,
+    projectRoot:controller.project?.projectRoot,projectId:controller.project?.projectId,documentId:controller.documentId };
   const prompt = `Use the OpenPencil code-generation workflow for this request: ${JSON.stringify(context)}. ` +
     `Read canvas_codegen_status and require its requestId to equal ${requestId}; a mismatch or cancelled status means this request must stop. Inspect the captured nodes and their native screenshot, then implement them in the current project using its existing conventions. ` +
     'Use codegen_export as a starting point; preserve text, layout, images and design tokens. Finish a runnable implementation and relevant checks. ' +
@@ -51,6 +52,11 @@ export async function completeCodegen(controller, { requestId, codePath }) {
   const job = controller.codegenJob;
   if (!job || job.requestId !== requestId || job.status === 'cancelled') fail('This code-generation request is no longer active.');
   if (!isAbsolute(codePath || '')) fail('Use the absolute path of the primary generated source file.');
+  if(job.projectId && (job.projectId!==controller.project?.projectId || job.documentId!==controller.documentId)) fail('The design project changed after this request.');
+  if(job.projectRoot) {
+    const part=relative(job.projectRoot,await realpath(codePath));
+    if(part==='..'||part.startsWith('..'+sep)||isAbsolute(part)) fail('The code file must belong to the captured project.');
+  }
   const extensions = { react: ['.tsx', '.jsx'], 'react-tailwind': ['.tsx', '.jsx'], vue: ['.vue'], svelte: ['.svelte'], html: ['.html'], flutter: ['.dart'], swiftui: ['.swift'], compose: ['.kt'], 'react-native': ['.tsx', '.jsx'] };
   if (!extensions[job.framework].includes(extname(codePath).toLowerCase())) fail('The primary source extension must match the requested framework.');
   const stat = await lstat(codePath);

@@ -1,10 +1,19 @@
 import { createInterface } from 'node:readline';
-import { resolve, join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { CanvasController } from '../plugins/openpencil/scripts/canvas-controller.mjs';
 
 const args = process.argv.slice(2);
-if (args.length && (args.length !== 2 || args[0] !== '--file')) throw new Error('Usage: npm run canvas [-- --file /absolute/design.op]');
+const usage = 'Usage: npm run canvas -- --project-root /absolute/project [--file /absolute/design.op]';
+if (args.length === 1 && args[0] === '--help') { console.log(usage); process.exit(0); }
+const options = {};
+for (let i = 0; i < args.length; i += 2) {
+  const key = { '--project-root': 'projectRoot', '--file': 'filePath' }[args[i]];
+  const value = args[i + 1];
+  if (!key || options[key] !== undefined || typeof value !== 'string' || !isAbsolute(value)) throw new Error(usage);
+  options[key] = value;
+}
+if (!options.projectRoot) throw new Error(usage);
 const controller = new CanvasController();
 // Canonical PTY input truncates JSON design batches at the OS line-buffer limit.
 // Raw input lets readline frame complete JSON lines without terminal echo.
@@ -18,7 +27,7 @@ const interrupt = chunk => { if (chunk.includes(3) || chunk.includes(4)) shutdow
 if (tty) process.stdin.on('data', interrupt);
 process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
 try {
-  const opened = await controller.open(args.length ? { filePath: resolve(args[1]) } : {});
+  const opened = await controller.open(options);
   console.log(JSON.stringify({ ready: true, ...opened.structuredContent,
     input: 'One JSON object per line: {"name":"get_editor_state","arguments":{}}. Send {"quit":true} to close. Never retry a failed write automatically.' }));
   let id = 0;

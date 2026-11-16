@@ -70,9 +70,9 @@ Rust compiler, npm dependency install, or separate OpenPencil desktop app is nee
    persistent terminal entry point:
 
    ```sh
-   npm run canvas
+   npm run canvas -- --project-root /absolute/project
    # Existing document (copied into a recovery session):
-   npm run canvas -- --file /absolute/path/design.op
+   npm run canvas -- --project-root /absolute/project --file /absolute/path/design.op
    ```
 
    Run this in a persistent terminal/PTY and keep stdin open. Wait for its

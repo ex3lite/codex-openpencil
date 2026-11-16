@@ -18,13 +18,15 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 
 export async function verifyRuntime(runtimeRoot) {
   const dir = await mkdtemp(join(tmpdir(), 'openpencil-install-check-'));
+  const previousStateDirectory = process.env.OPENPENCIL_CODEX_STATE_DIR;
+  process.env.OPENPENCIL_CODEX_STATE_DIR = join(dir, 'state');
   const filePath = join(dir, 'setup-check.op');
   const controller = new CanvasController({ runtimeRoot });
   try {
     await writeFile(filePath, JSON.stringify({ version: '0.8.5', children: [
       { type: 'frame', id: 'setup-check', name: 'Installation check', width: 400, height: 300, children: [] },
     ] }));
-    const opened = await controller.open({ filePath });
+    const opened = await controller.open({ filePath, projectRoot: dir });
     if (!(await fetch(opened.structuredContent.panelUrl)).ok) throw new Error('Canvas panel did not load.');
     const reply = await controller.dispatch({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
       name: 'update_node', arguments: { nodeId: 'setup-check', data: { name: 'Verified installation' } },
@@ -37,7 +39,13 @@ export async function verifyRuntime(runtimeRoot) {
     try {
       if (!JSON.stringify((await reopened.document()).document).includes('Verified installation')) throw new Error('Saved document did not reopen.');
     } finally { await reopened.close(); }
-  } finally { await controller.close(); await rm(dir, { recursive: true, force: true }); }
+  } finally {
+    try { await controller.close(); await rm(dir, { recursive: true, force: true }); }
+    finally {
+      if (previousStateDirectory === undefined) delete process.env.OPENPENCIL_CODEX_STATE_DIR;
+      else process.env.OPENPENCIL_CODEX_STATE_DIR = previousStateDirectory;
+    }
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -60,6 +68,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     console.log(JSON.stringify({ ok: true, runtime: runtime.version, platform: `${process.platform}-${process.arch}`,
       verified: ['panel', 'native-edit', 'save', 'reopen'], pluginInstalled: !args.includes('--runtime-only'),
       pluginHost,
-      next: 'Call canvas_open_browser and show its panelUrl in the Codex browser panel. Otherwise run npm run canvas in a persistent terminal to use the canvas now; reconnect the plugin or start a new chat to load its tools.' }, null, 2));
+      next: 'Call open_canvas with the absolute Codex projectRoot. For a terminal session run npm run canvas -- --project-root /absolute/project [--file /absolute/design.op]; reconnect the plugin or start a new chat to load its tools.' }, null, 2));
   } catch (error) { console.error(`OpenPencil setup failed: ${error.message}`); process.exitCode = 1; }
 }

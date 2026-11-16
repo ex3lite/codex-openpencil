@@ -109,7 +109,7 @@ The matching runtime downloads on demand for macOS, Windows, or Linux, on ARM64 
 
 ### 💾 Editable Files & Recovery
 
-Save portable `.op` files and reopen them later. Each chat owns a separate canvas and recovery draft; source conflict checks and guarded Save As protect existing files.
+Save portable `.op` files and reopen them later. Each project keeps its own document catalog and recovery drafts in `.openpencil/`; source conflict checks and guarded Save As protect existing files.
 
 </td>
 <td width="50%" valign="top">
@@ -132,9 +132,9 @@ After installation and any required reconnect, ask:
 
 You can shorten OpenPencil to **op / OP**, for example “Use OP to design a single-page mobile task manager” or “Use op to edit the selected button”. Chinese prompts such as “用op设计一个单页 APP” work too.
 
-You can also choose **+ → OpenPencil Canvas → 在 Codex 中打开 (Open in Codex)** in the desktop app's right panel. The launcher sends an opening request to the current chat, and Codex opens the canvas in its built-in browser. It confirms the connection after the native editor is ready. If the host does not support this handoff, use **复制打开指令 (Copy opening instruction)** and send it in the current chat.
+Use **＋ → OpenPencil Canvas** in the desktop app's right panel. Codex calls `open_canvas` with the absolute `projectRoot` of the current workspace. The MCP App displays the original Rust/CanvasKit editor directly inside Codex. Pass `filePath` or a registered `documentId` to open an existing design; omitting both creates a new project draft.
 
-`canvas_open_browser` starts a separate managed Rust editor and returns its URL for Codex's browser panel. Codex verifies the connection and follows the bundled `openpencil-design` workflow to create, inspect, preview, and save the design. Use another chat for another document; opening an existing `.op` file copies it into the session.
+The project menu lists this project's documents and switches between them in the same canvas, checkpointing the current document first. Catalog entries and recovery copies stay under `<projectRoot>/.openpencil/`; another project's latest document is never chosen automatically. Codex follows the bundled `openpencil-design` workflow to create, inspect, preview, and save editable designs. `canvas_open_browser` remains an explicit browser fallback or diagnostic surface.
 
 The sidebar offers Layers and Slides. Slide cards show live board previews; click a card to navigate to its board. Conversation stays in Codex, so the embedded editor hides its own Agent tab.
 
@@ -160,7 +160,7 @@ Generated assets are saved in your project and imported into individual editable
 
 > Check the layout, show me a preview, and save this design as an .op file in my project.
 
-The design workflow checks native layout and the rendered PNG, then reads the saved result back. The panel's **Save** button flushes pending browser edits before writing. Changes to the source file outside the editor stop replacement; **Save As** refuses an existing destination. Recovery drafts persist in `~/.codex-openpencil/sessions/`.
+The design workflow checks native layout and the rendered PNG, then reads the saved result back. The panel's **Save** button flushes pending editor changes before writing. Changes to the source file outside the editor stop replacement; **Save As** refuses an existing destination. Recovery drafts persist in `<projectRoot>/.openpencil/recovery/` and remain attached to their project document.
 
 ## Design examples
 
@@ -221,11 +221,11 @@ Canvas controls remain discoverable with the desktop editor offline. Reconnect a
 <details>
 <summary><strong>Host compatibility and current limits</strong></summary>
 
-Codex opens the editable canvas in its browser panel through `canvas_open_browser`. The MCP Apps entrypoint is in the right panel's **＋ → OpenPencil Canvas** menu. Current Codex versions reject local HTTP iframes. Where the host supports chat messages, the entrypoint asks the current Codex chat to open the same canvas in its built-in browser; it waits for an editor-ready receipt before showing a connection. Otherwise, copy the opening instruction and send it in the current chat. The plugin does not launch your system browser. Hosts that permit the declared local frame origin can embed the canvas. The URL is temporary; closing the plugin stops only its owned Rust process, while recovery drafts remain available.
+The primary surface is the native MCP App opened by `open_canvas({projectRoot})`. Its bundled Rust/CanvasKit editor uses the app-only transport to the owned local daemon; it does not depend on a local HTTP iframe. `canvas_open_browser` is available when a browser fallback is explicitly needed. Closing a bridge stops only its owned runtime; project recovery copies remain in `.openpencil/recovery/`.
 
 MCP Apps use the initial host theme and live theme notifications. A launched browser canvas starts with that theme; panels opened without a theme use `prefers-color-scheme`. Codex's in-app browser supplies its resolved app theme.
 
-Native resource loading, browser interaction and embedded host presentation are separate checks. Codex's current HTTP iframe restriction prevents embedded canvas presentation. All hosts use the current Codex chat for edit instructions. In the browser canvas, click Code panel Generate and say “继续转代码” in chat; automatic prompt delivery is available only in an embedded host that supports messaging. See [evidence and remaining checks](./docs/validation.md).
+Native resource loading, browser diagnostics and actual MCP App presentation are separate checks. A matching runtime and generated editor glue are required. All edit instructions remain in the current Codex chat. Code-panel handoff uses host messaging when available; a browser fallback requires continuing in chat. See [evidence and remaining checks](./docs/validation.md).
 
 This plugin is distributed through the public GitHub repository and releases. It has not been submitted to OpenAI's public Plugin Directory.
 
@@ -236,6 +236,14 @@ This plugin is distributed through the public GitHub repository and releases. It
 Select a frame, open the right **Code** panel, choose a framework and click **Generate**. The panel first shows baseline source for preview, copy and download. An embedded host with MCP Apps messaging hands the captured target to the current Codex chat for a runnable implementation and checks. In a standalone browser, say **“continue converting to code”** in Codex. Codex returns the primary source to the panel; the full project and supporting files remain in your workspace. A changed design requires a fresh request.
 
 ## Development and verification
+
+For a manual terminal canvas, explicitly select the Codex project:
+
+```sh
+npm run canvas -- --project-root /absolute/project --file /absolute/project/design.op
+```
+
+`--project-root` is required. Omit `--file` to create a new draft in that project; use the project menu to reopen a registered document.
 
 ```sh
 npm run check

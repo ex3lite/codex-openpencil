@@ -35,7 +35,7 @@ const find = (document, targetId) => {
 };
 async function open() {
   const controller = new CanvasController({ runtimeRoot: options.runtime }); controllers.add(controller);
-  await controller.open({ filePath }); return controller;
+  await controller.open({ filePath, projectRoot: output }); return controller;
 }
 async function tool(controller, name, args = {}) {
   assert.ok(controller.session, 'Use only this test-owned runtime');

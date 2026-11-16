@@ -109,7 +109,7 @@ Codex OpenPencil 将 Codex 连接到本地 Rust [OpenPencil](https://github.com/
 
 ### 💾 可编辑文件与恢复
 
-保存为可迁移的 `.op` 文件，随时重新打开。每个聊天拥有独立画布和恢复草稿，源文件冲突检查与另存为保护已有文件。
+保存为可迁移的 `.op` 文件，随时重新打开。每个项目在自己的 `.openpencil/` 目录中保存文档索引和恢复草稿，源文件冲突检查与另存为保护已有文件。
 
 </td>
 <td width="50%" valign="top">
@@ -132,9 +132,9 @@ Codex OpenPencil 将 Codex 连接到本地 Rust [OpenPencil](https://github.com/
 
 也可以简称 **op / OP**，例如“用 op 设计一个单页手机任务管理 APP”或“用 OP 修改选中的按钮”。
 
-也可以从桌面端右侧面板选择 **＋ → OpenPencil Canvas → 在 Codex 中打开**。入口会将打开请求发送到当前聊天，由 Codex 在内置浏览器中打开画布；原生编辑器就绪后，入口显示连接成功。宿主不支持自动交接时，点击**复制打开指令**，粘贴到当前聊天并发送即可。
+从桌面端右侧面板选择 **＋ → OpenPencil Canvas**。Codex 调用 `open_canvas`，明确传入当前工作区的绝对 `projectRoot`。MCP App 直接在 Codex 内显示原有的 Rust/CanvasKit 编辑器。传入 `filePath` 或已登记的 `documentId` 可打开已有设计；两者均省略则创建新的项目草稿。
 
-`canvas_open_browser` 启动独立的托管 Rust 编辑器，并返回供 Codex 浏览器面板打开的地址。Codex 验证连接后，按内置 `openpencil-design` 工作流创建、检查、预览并保存设计。另一份文档使用另一个聊天；打开已有 `.op` 文件时，会先复制到当前独立会话。
+项目菜单列出当前项目的文档，可在同一画布中切换，切换前先保存当前文档的恢复副本。文档索引和恢复副本保存在 `<projectRoot>/.openpencil/`，不会自动选择其他项目最近打开的文档。Codex 按内置 `openpencil-design` 工作流创建、检查、预览并保存可编辑设计。`canvas_open_browser` 保留为明确选择的浏览器备用入口或诊断工具。
 
 侧栏提供图层和幻灯片。幻灯片卡片显示画板的实时缩略图，点击即可定位到对应画板。对话留在 Codex，嵌入编辑器隐藏自身的 Agent tab。
 
@@ -160,7 +160,7 @@ Codex OpenPencil 将 Codex 连接到本地 Rust [OpenPencil](https://github.com/
 
 > 检查布局，给我看预览，把这份设计保存成项目里的 .op 文件。
 
-设计工作流检查原生布局和实际渲染的 PNG，保存后读取结果验证。面板的**保存**按钮先同步尚未写入的浏览器修改；源文件被外部改动时停止覆盖，**另存为**拒绝覆盖已有目标。恢复草稿保留在 `~/.codex-openpencil/sessions/`。
+设计工作流检查原生布局和实际渲染的 PNG，保存后读取结果验证。面板的**保存**按钮先同步尚未写入的编辑器修改；源文件被外部改动时停止覆盖，**另存为**拒绝覆盖已有目标。恢复草稿保留在 `<projectRoot>/.openpencil/recovery/`，并始终属于对应的项目文档。
 
 ## 设计示例
 
@@ -221,11 +221,11 @@ npm run doctor -- --port 3100
 <details>
 <summary><strong>宿主兼容性与当前限制</strong></summary>
 
-Codex 通过 `canvas_open_browser` 在浏览器面板打开可编辑画布。MCP Apps 入口位于右侧面板的 **＋ → OpenPencil Canvas**。当前 Codex 会拦截本地 HTTP iframe。宿主支持发送聊天消息时，入口按钮会请求当前 Codex 聊天在内置浏览器中打开同一份画布，收到编辑器就绪回执后才显示已连接；不支持时则复制打开指令，粘贴到当前聊天发送。插件不会自动启动系统浏览器。允许所声明本地框架来源的其他宿主可以内嵌画布。地址临时有效；插件关闭后仅停止自己的 Rust 服务，恢复草稿继续保留。
+主要入口是 `open_canvas({projectRoot})` 打开的原生 MCP App。其 Rust/CanvasKit 编辑器通过专用应用传输连接自有的本地服务，不依赖本地 HTTP iframe。确需浏览器备用入口时可使用 `canvas_open_browser`。关闭桥接只会停止其自有服务，项目恢复副本仍保留在 `.openpencil/recovery/`。
 
 MCP Apps 使用宿主初始主题和实时主题通知；通过按钮打开的浏览器画布沿用启动时主题，未指定主题的独立面板使用 `prefers-color-scheme`。Codex 内置浏览器会传入当前应用主题。
 
-原生资源加载、浏览器交互、宿主内嵌呈现分别验证。当前 Codex 的 HTTP iframe 限制阻止画布内嵌；修改需求仍在当前 Codex 聊天描述。浏览器画布中点击代码面板的「生成」后，在聊天说「继续转代码」；只有支持消息能力的内嵌宿主才能自动投递提示词。详见[验证证据与剩余检查](./docs/validation.md)。
+原生资源加载、浏览器诊断和实际 MCP App 呈现分别验证，并要求运行环境与生成的编辑器桥接代码匹配。修改需求仍在当前 Codex 聊天描述。代码面板在宿主支持时通过消息交接；浏览器备用入口需要在聊天中继续。详见[验证证据与剩余检查](./docs/validation.md)。
 
 插件通过公开 GitHub 仓库和 Releases 分发，尚未提交或上架 OpenAI 公共插件目录。
 
@@ -236,6 +236,14 @@ MCP Apps 使用宿主初始主题和实时主题通知；通过按钮打开的�
 选中画板，在右侧**代码**面板选择框架并点击**生成**。面板先提供可预览、复制和下载的基础代码；支持 MCP Apps 消息的内嵌宿主会将固定选区交给当前 Codex 聊天，继续完成可运行项目和验证。独立浏览器中，在 Codex 说**“继续转代码”**即可接续。Codex 完成后将主源码回填面板，完整项目和配套文件保存在工作区。设计发生变化时，需要重新生成请求。
 
 ## 开发与验证
+
+通过终端手动打开画布时，必须明确指定 Codex 项目：
+
+```sh
+npm run canvas -- --project-root /absolute/project --file /absolute/project/design.op
+```
+
+`--project-root` 为必填参数。省略 `--file` 会在该项目中创建新草稿；已有文档可从项目菜单重新打开。
 
 ```sh
 npm run check

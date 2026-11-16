@@ -9,13 +9,17 @@ Recognize “OP” and “op” as OpenPencil in requests for UI design, canvas 
 or .op files, including “用op设计一个单页 APP”. Open or reuse this plugin's
 conversation canvas; export to code only when the user requests implementation.
 
-Use the connected Rust MCP tools as the source of truth. Start with
-`get_editor_state` and read the relevant nodes. Preserve existing document
+Use the connected Rust MCP tools as the source of truth. Open the project canvas
+first, then read `get_editor_state` and the relevant nodes. Preserve existing document
 content and use the user's chosen file, page, selection, and reference.
 For connection failures, see [setup](../openpencil-setup/SKILL.md).
 
 For an interactive canvas in Codex, call `open_canvas` and use its MCP App
-thread entrypoint. The original Rust editor runs directly inside that panel;
+thread entrypoint. On first open pass `projectRoot` equal to the current Codex
+workspace root and optionally an existing in-project `filePath` or registered
+`documentId`. Never infer a global latest document. `canvas_documents` lists only
+this project; external files require explicit `canvas_document_import` as a copy.
+The original Rust editor runs directly inside that panel;
 Codex remains the only chat and model connection. Pass the chosen existing
 file, or omit the path for a new document. Verify `canvas_status` and
 `get_editor_state`. All native tools then edit that managed canvas.
@@ -74,8 +78,13 @@ request to edit the whole page: ask the user to select a target. For a desktop
 editor without a managed canvas, use `get_editor_state` and read its selection.
 
 Use the current Codex chat for instructions, progress and results. The canvas
-only shows selection status and synchronizes context; it has no prompt input or
-edit-request lifecycle. Do not ask the user to copy internal IDs. Treat host
+provides explicit Comments and Context controls, with one combined context
+snapshot. For a comment request, read `canvas_comments` by its comment ID first;
+use its captured document, page, node IDs and version. Do NOT replace its target
+with the current selection. If the design changed, read the exact anchored nodes
+and reconcile; a missing node is never permission to edit the whole page. After
+implementation and visual verification, use `canvas_comment_update` with
+`status: "resolved"`. Sending a comment and resolving it are different actions. Do not ask the user to copy internal IDs. For requests about the current selection (not pinned comments), treat host
 selection context as a hint and verify it with `canvas_selection` when starting
 the edit. Once the target is resolved, keep those node IDs through the edit rather
 than silently following later selection changes. If the document/page no longer
@@ -108,6 +117,29 @@ completion.
   `batch_get`: a repaired tree may have new node IDs. Use those current IDs for
   layout inspection, screenshots and subsequent edits.
 
+## Multiple Codex agents on one canvas
+
+Use Codex collaboration tools for delegation; never call the editor's builtin
+`spawn_agents`, configure providers or open a new canvas in the child.
+
+1. Parent creates or identifies separate existing frame subtrees, then calls
+   `canvas_agent_assign` with each agent's unique `agentId`, short `name`, `pageId`
+   and disjoint `rootIds`. Maximum ten concurrent assignments; a parent root
+   and its child cannot be assigned to different agents.
+2. Pass the returned `projectRoot`, `canvasId`, `leaseId`, exact scope and design
+   brief to each Codex subagent. Spawn only as many agents as independent work
+   requires. The parent keeps its canvas open.
+3. Child uses `canvas_agent(action: "read", projectRoot, canvasId, leaseId)` and
+   edits the returned canonical subtree. Apply with `action: "apply"`, the read
+   `expectedVersion` and replacement `subtrees`; preserve assigned root IDs.
+   The broker connects to the parent, even across separate MCP processes.
+4. On VERSION_CONFLICT explicitly read, compare and rebase. On an uncertain
+   write read before deciding; never blindly retry. Renew a long assignment,
+   release when complete. The original editor renders each agent's color/cursor.
+5. Parent inspects all results, renders affected roots and saves the project.
+   Leases are exclusive scopes, not permission to overwrite unrelated work.
+   `canvas_agents` reports actual active assignments, not model execution status.
+
 ## Inspect and deliver
 
 1. Inspect `snapshot_layout` and run `lint_document` on the affected subtree.
@@ -118,8 +150,10 @@ completion.
    For phone screens with system chrome, verify exactly one complete set of
    time, cellular signal, Wi-Fi, and battery indicators, with no duplicate bar.
 3. For managed interactive persistence, confirmed document pushes checkpoint
-   the recovery draft. The native 0.4.2 Save/Save As commands first await the
+   the recovery draft. The native Save/Save As commands first await the
    editor snapshot and selection flush, then acknowledge only the saved revision.
+   Project documents, comments and recovery live in `.openpencil` under the
+   bound workspace. Use the project document list to switch after a UI flush.
    Opening/importing another document detaches the previous save destination.
    Direct `canvas_save` and intercepted `save_document` calls save the daemon's
    current snapshot; verify pending edits have synced before calling them. Save

@@ -12,6 +12,7 @@ async function localFetch(input,options={}){
  const method=options.method||request?.method||'GET';
  const body=options.body??(request&&method!=='GET'?await request.text():undefined);
  const path=url.pathname+url.search,key=method+' '+path;
+ if(method==='POST'&&path==='/api/mcp/document')await nativeEditor.syncBarrier();
  const isAsset=method==='GET'&&/^\/(pkg|assets|canvaskit)\//.test(path);
  let promise=isAsset&&assetCache.get(key);
  if(!promise){promise=nativeBridge.call('canvas_native_request',{path,method,...(body!==undefined?{body:String(body)}:{})}).then(r=>{if(!r._meta?.nativeHttp)throw Error('Нет ответа транспорта редактора');return r._meta.nativeHttp;});if(isAsset)assetCache.set(key,promise);}

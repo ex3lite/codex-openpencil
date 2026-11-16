@@ -5,9 +5,13 @@ import { mkdir, mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { EditorSession } from '../plugins/openpencil/scripts/editor-session.mjs';
 import { CANVAS_URI } from '../plugins/openpencil/scripts/canvas-controller.mjs';
+import { resolveRuntime } from '../plugins/openpencil/scripts/editor-runtime.mjs';
 
 const root=resolve('artifacts'); await mkdir(root,{recursive:true});
 const output=await mkdtemp(join(root,'canvas-'));
+const runtime = await resolveRuntime();
+process.env.OPENPENCIL_EDITOR_RUNTIME_DIR = runtime.root;
+process.env.OPENPENCIL_CODEX_STATE_DIR = join(output, 'state');
 const filePath=join(output,'design.op');
 await writeFile(filePath,JSON.stringify({version:'0.8.5',children:[{type:'frame',id:'canvas-demo',name:'Codex Canvas',x:80,y:80,width:800,height:500,
   fill:[{type:'solid',color:'#F8F6EF'}],children:[
@@ -25,7 +29,7 @@ function request(method,params={}) {return new Promise((resolve,reject)=>{const 
 async function tool(name,args={}) {const result=await request('tools/call',{name,arguments:args});if(result.isError)throw new Error(result.content[0].text);return result;}
 try {
   await request('initialize',{protocolVersion:'2025-11-25',clientInfo:{name:'canvas-smoke',version:'1'},capabilities:{}});
-  const opened=await tool('canvas_open_browser',{filePath});
+  const opened=await tool('canvas_open_browser',{filePath,projectRoot:output});
   const tools=await request('tools/list');
   assert.ok(tools.tools.some(t=>t.name==='batch_design'));
   assert.ok(tools.tools.some(t=>t.name==='open_canvas'));

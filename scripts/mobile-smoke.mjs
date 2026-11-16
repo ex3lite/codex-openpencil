@@ -53,12 +53,12 @@ async function tool(controller, name, args = {}) {
   }
   return result;
 }
-async function open(filePath) {
+async function open(projectRoot, filePath) {
   const controller = new CanvasController({ runtimeRoot:options.runtime });
   sessions.add(controller);
   // Do not dispatch initialize/tools/list before open: an unbound controller
   // intentionally supports discovery, which this smoke test must never use.
-  await controller.open(filePath ? { filePath } : {});
+  await controller.open({ projectRoot, ...(filePath && { filePath }) });
   return controller;
 }
 async function close(controller) {
@@ -142,7 +142,7 @@ async function runCase(spec) {
   report.cases.push(result);
   let controller;
   try {
-    controller = await open();
+    controller = await open(directory);
     result.runtimeVersion = controller.session.version;
     const guidelines = content(await tool(controller, 'get_guidelines', { topic:spec.mobile ? 'mobile' : 'dashboard' }));
     await json(join(directory, 'guidelines.json'), guidelines);
@@ -156,7 +156,7 @@ async function runCase(spec) {
     const filePath = join(directory, 'saved.op');
     result.saved = content(await tool(controller, 'canvas_save', { filePath }));
     await close(controller); controller = null;
-    controller = await open(filePath);
+    controller = await open(directory, filePath);
     result.stages.push(await inspect(controller, spec, directory, 'reopened', created.rootId));
     result.status = result.stages.every(stage => stage.passed) ? 'PASS' : 'FAIL';
   } catch (error) {

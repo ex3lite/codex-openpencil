@@ -24,7 +24,7 @@ const report = {status:'FAIL',output,filePath,selectionIngress:'native MCP set_s
 let id = 0;
 async function open() {
   const controller = new CanvasController({runtimeRoot:options.runtime}); controllers.add(controller);
-  await controller.open({filePath}); return controller;
+  await controller.open({filePath,projectRoot:output}); return controller;
 }
 async function tool(controller,name,args={}) {
   assert.ok(controller.session,'Never route this test to a user editor');

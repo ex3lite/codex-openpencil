@@ -6,14 +6,16 @@ import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveRuntime } from '../plugins/openpencil/scripts/editor-runtime.mjs';
 
 const dir = await mkdtemp(join(tmpdir(), 'openpencil-terminal-test-'));
+const runtime = await resolveRuntime();
 const file = join(dir, 'terminal.op');
 await writeFile(file, JSON.stringify({ version: '0.8.5', children: [{ type: 'frame', id: 'terminal-board',
   name: 'Terminal test', width: 500, height: 300, fill: [{ type: 'solid', color: '#F4F1E9' }], children: [
     { type: 'text', id: 'terminal-title', x: 30, y: 30, content: 'Before', fontSize: 28, fontFamily: 'DM Sans', fill: [{ type: 'solid', color: '#222820' }] },
   ] }] }));
-const canvasArgs = [fileURLToPath(new URL('./canvas.mjs', import.meta.url)), '--file', file];
+const canvasArgs = [fileURLToPath(new URL('./canvas.mjs', import.meta.url)), '--project-root', dir, '--file', file];
 let executable = process.execPath, commandArgs = canvasArgs;
 if (process.argv.includes('--pty')) {
   if (process.platform === 'win32') throw new Error('The POSIX PTY regression requires Python 3 and its standard-library pty module.');
@@ -36,7 +38,8 @@ os.close(master)
 sys.exit(child.wait())`;
   commandArgs = ['-c', relay, process.execPath, ...canvasArgs];
 }
-const child = spawn(executable, commandArgs, { stdio: ['pipe', 'pipe', 'inherit'] });
+const child = spawn(executable, commandArgs, { stdio: ['pipe', 'pipe', 'inherit'], env: { ...process.env,
+  OPENPENCIL_EDITOR_RUNTIME_DIR: runtime.root, OPENPENCIL_CODEX_STATE_DIR: join(dir, 'state') } });
 const ended = once(child, 'close');
 const lines = createInterface({ input: child.stdout });
 let waiting;

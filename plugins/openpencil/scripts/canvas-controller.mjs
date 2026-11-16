@@ -1,5 +1,11 @@
 import { NATIVE_URI, nativeHtml, nativeRequest, nativeTools } from './native-canvas.mjs';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { CanvasComments } from './canvas-comments.mjs';
+import { CanvasAgents } from './canvas-agents.mjs';
+import { startCanvasAgentBroker, callCanvasAgent } from './canvas-agent-broker.mjs';
+import { workspaceTools } from './canvas-workspace-tools.mjs';
+import { bindProject, attachProjectSession, projectSummary, projectDocuments, switchProjectDocument, detachProjectDocument, importProjectDocument } from './canvas-projects.mjs';
 import { EditorSession } from './editor-session.mjs';
 import { startPanel } from './canvas-panel.mjs';
 import { forward, errorReply } from './transport.mjs';
@@ -12,14 +18,15 @@ export const CANVAS_URI = NATIVE_URI;
 const schema = properties => ({ type: 'object', properties, additionalProperties: false });
 const filePath = { type: 'string', description: 'Absolute .op path; omit to create or reopen this session’s canvas.' };
 export const canvasTools = [
+  ...workspaceTools,
   { name: 'canvas_detach_source', description: 'App-only: detach the previous save destination after a successful New/Open/import. Does not write or delete any file.',
     inputSchema: schema({}), annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
   ...nativeTools,
   { name: 'open_canvas', title: 'OpenPencil Canvas', description: 'Open the editable Rust canvas entrypoint: direct full Rust/CanvasKit editor inside Codex MCP Apps. Optional filePath loads an existing .op into an isolated managed session. All subsequent OpenPencil tools target this canvas until the bridge closes. Omit the path for a new document. Returns the same local panel URL as canvas_open_browser.',
-    inputSchema: schema({ filePath }), annotations: { destructiveHint: false, openWorldHint: false },
+    inputSchema: schema({ filePath, projectRoot: {type:'string',description:'Absolute Codex workspace root. Required on first open; never use a global latest document.'}, documentId:{type:'string',description:'Registered document ID inside this project.'} }), annotations: { destructiveHint: false, openWorldHint: false },
     _meta: { ui: { resourceUri: CANVAS_URI }, 'openai/ui': { entrypoints: [{ type: 'thread' }], preferredModelDisplayMode: 'fullscreen' } } },
   { name: 'canvas_open_browser', description: 'Open or reconnect this chat’s managed editable canvas and return its local panelUrl. Show this URL in the Codex built-in browser with open_in_codex (browser target) or @Browser. Preserve any supplied theme/launch fragment. Use an external browser only when the user explicitly requests it. Use this when the host hides the open_canvas UI entrypoint or cannot embed local HTTP frames. All subsequent OpenPencil tools target this same canvas.',
-    inputSchema: schema({ filePath }), annotations: { destructiveHint: false, openWorldHint: false } },
+    inputSchema: schema({ filePath, projectRoot:{type:'string'}, documentId:{type:'string'} }), annotations: { destructiveHint: false, openWorldHint: false } },
   { name: 'canvas_prepare_browser', description: 'Prepare this conversation’s existing canvas URL and short-lived ready receipt for opening through the current Codex chat. Does not launch a browser or send a message. Never accepts a URL or file path; the host controls in-app browser navigation.',
     inputSchema: { ...schema({ theme: { type: 'string', enum: ['light', 'dark'] } }), required: ['theme'] },
     annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
@@ -61,29 +68,80 @@ export class CanvasController {
   constructor(options = {}) { this.options = options; this.queue = Promise.resolve(); this.session = null; this.panel = null; }
   enqueue(work) { const result = this.queue.then(work); this.queue = result.catch(() => {}); return result; }
   async ensurePanel() { if (!this.panel) this.panel = await startPanel(this); return this.panel; }
-  async open({ filePath } = {}) {
+  async open(args = {}) {
+    const {filePath,projectRoot,documentId} = args;
     const panel = await this.ensurePanel();
-    if (this.session && filePath && filePath !== this.session.source && filePath !== this.session.draft) {
+    if (this.session && this.project) await bindProject(this,args);
+    if (this.session && !this.project && filePath && filePath !== this.session.source && filePath !== this.session.draft) {
       throw new Error('This conversation already has a canvas. Save it, then open the other document in a new conversation.');
     }
     if (!this.session) {
-      this.session = await EditorSession.start({ filePath, allowOrigin: panel.origin, runtimeRoot: this.options.runtimeRoot });
+      try {
+      const binding = await bindProject(this, {projectRoot,documentId,filePath});
+      this.session = await EditorSession.start({ filePath:binding.initialFilePath, allowOrigin: panel.origin, runtimeRoot: this.options.runtimeRoot });
+      this.session.source=binding.sourcePath; this.session.baseline=binding.baseline;
+      await attachProjectSession(this);
+      await this.session.checkpoint();
+      await this.resetDocumentServices();
       await this.options.onToolsChanged?.();
+      } catch(error) {
+        await this.quiesceDocumentAgents().catch(()=>{});
+        if(this.session) await this.session.close().catch(()=>{});
+        this.session=null;
+        await this.releaseProjectLease?.();
+        throw error;
+      }
+    } else if(!this.project && projectRoot) {
+      throw Error('Холст закреплён за другим проектом. Откройте его в соответствующем чате Codex.');
     }
     this.session.assertLive();
-    const value = { filePath: this.session.source, recoveryPath: this.session.draft, panelUrl: panel.url, version: this.session.version };
+    const value = { filePath: this.session.source, recoveryPath: this.recoveryPath(), panelUrl: panel.url, version: this.session.version,
+      project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId };
     return { ...toolResult(value), _meta: { canvas: { editorOrigin: `http://127.0.0.1:${this.session.port}`,
       token: this.session.token, panelUrl: panel.url } } };
   }
+  recoveryPath() { return this.project ? join(this.project.recoveryDirectory,this.documentId+'.op') : this.session.draft; }
+  async resetDocumentServices() {
+    await this.quiesceDocumentAgents();
+    this.codegenJob=null;
+    this.agents=new CanvasAgents({session:this.session});
+    const agents=this.agents;
+    this.agentBroker=await startCanvasAgentBroker(agents,{projectRoot:this.project.projectRoot,
+      dispatch:(action,args)=>this.enqueue(()=>agents.dispatch(action,args))});
+    this.comments=new CanvasComments({session:this.session,filePath:join(this.project.directory,'comments',this.documentId+'.json'),
+      identity:{projectId:this.project.projectId,documentId:this.documentId,canvasId:this.agents.canvasId}});
+  }
+  async quiesceDocumentAgents() {
+    if(this.agentBroker) {await this.agentBroker.close();this.agentBroker=null;}
+    if(this.agents) {await this.agents.queue;this.agents.leases.clear();}
+  }
   async call(name, args) {
+    if(name==='canvas_agent') {
+      const {projectRoot,canvasId,action,...operation}=args;
+      if(canvasId===this.agents?.canvasId) {
+        if(projectRoot!==this.project.projectRoot) throw Error('Агент назначен другому проекту.');
+        return toolResult(await this.agents.dispatch(action,operation));
+      }
+      return toolResult(await callCanvasAgent(canvasId,action,operation,{projectRoot}));
+    }
     if (name === 'canvas_native_request') return nativeRequest(this,args);
     if (name === 'open_canvas' || name === 'canvas_open_browser') return this.open(args);
     if (!this.session) throw new Error('Open a managed canvas with canvas_open_browser or open_canvas first.');
+    if(this.projectSwitchUncertain && !['canvas_status','canvas_selection','canvas_documents','canvas_comments','canvas_agents'].includes(name)) throw Error('Переключение макета не подтверждено. Изменения остановлены; откройте сохранённый проект заново.');
+    if(name==='canvas_documents') return toolResult(await projectDocuments(this));
+    if(name==='canvas_document_open') return toolResult(await switchProjectDocument(this,args));
+    if(name==='canvas_document_import') return toolResult(await importProjectDocument(this,args));
+    if(name==='canvas_comment_create') return toolResult(await this.comments.create(args));
+    if(name==='canvas_comments') return toolResult(await this.comments.list());
+    if(name==='canvas_comment_update') return toolResult(await this.comments.update(args));
+    if(name==='canvas_agents') return toolResult(this.agents.status());
+    if(name==='canvas_agent_assign') return toolResult({...await this.agents.acquire(args),projectRoot:this.project.projectRoot});
     if (name === 'canvas_prepare_browser') return toolResult(prepareCanvasBrowser(this, args));
     if (name === 'canvas_launch_status') return toolResult(browserLaunchStatus(this, args));
     if (name === 'canvas_launch_ready') return toolResult(browserLaunchStatus(this, args, true));
     if (name === 'canvas_import_image') return toolResult(await importCanvasImage(this.session, args));
     if (name === 'canvas_detach_source') {
+      if(this.project) return toolResult(await detachProjectDocument(this));
       this.session.source = null; this.session.baseline = null; this.codegenJob = null;
       return toolResult({ filePath: null });
     }
@@ -95,11 +153,12 @@ export class CanvasController {
     if (name === 'canvas_codegen_cancel') return toolResult(cancelCodegen(this, args));
     if (name === 'canvas_codegen_poll') return toolResult(pollCodegen(this, args));
     const current = await readCanvasSelection(this.session);
-    return toolResult({ filePath: this.session.source, recoveryPath: this.session.draft, version: current.live.version, selection: current.selection, codegen: codegenSummary(this) });
+    return toolResult({ filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
+      project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,agents:this.agents?.status(),comments:this.comments?await this.comments.list():[] });
   }
   async resource() {
     return { contents: [{ uri: CANVAS_URI, mimeType: 'text/html;profile=mcp-app', text: await (this.options.nativeHtmlLoader ? this.options.nativeHtmlLoader() : nativeHtml(this.options.runtimeRoot)),
-      _meta: { ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [], frameDomains: [] } },
+      _meta: { ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: ['blob:', 'data:'], frameDomains: [] } },
         'openai/ui': { availableDisplayModes: ['inline', 'fullscreen'], preferredDisplayMode: 'fullscreen' } } }] };
   }
   async dispatch(message) {
@@ -118,10 +177,22 @@ export class CanvasController {
         if (message.params.arguments?.sourceFilePath) throw new Error('Source-copy save is unavailable while a managed canvas is active.');
         return reply(await this.call('canvas_save', message.params.arguments || {}));
       }
+      if(this.session && message.method==='tools/call') {
+        if(this.projectSwitchUncertain) throw Error('Переключение документа не подтверждено; откройте проект заново.');
+        const name=message.params.name, args={...message.params.arguments};
+        if(['open_document','new_document','spawn_agents'].includes(name)) throw Error('Use project document controls or canvas_agent_assign for this managed canvas.');
+        if(args.sourceFilePath) throw Error('Source file routing is unavailable inside a project canvas.');
+        if(args.filePath) {
+          if(!['live://canvas','live://canvas/current',this.session.source,this.session.draft].includes(args.filePath)) throw Error('This tool can only edit the active project document. Import another document explicitly.');
+          delete args.filePath;
+        }
+        message={...message,params:{...message.params,arguments:args}};
+      }
+      if(!this.session && !this.options.port && message.method==='tools/call') throw Error('Сначала откройте холст с open_canvas(projectRoot). Глобальный случайный документ не выбран.');
       const upstream = this.session ? await this.session.forward(message) : await forward(message, this.options);
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.4.2' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.5.0' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }
@@ -136,6 +207,9 @@ export class CanvasController {
   }
   async close() {
     await this.queue;
-    try { if (this.session) await this.session.close(); } finally { if (this.panel) await this.panel.close(); }
+    await this.quiesceDocumentAgents();
+    try { if (this.session) await this.session.close(); } finally {
+      try { await this.releaseProjectLease?.(); } finally { if (this.panel) await this.panel.close(); }
+    }
   }
 }

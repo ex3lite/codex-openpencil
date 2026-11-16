@@ -172,7 +172,7 @@ export async function callCanvasSession(identity, name, args = {}) {
   if (descriptor.schemaVersion !== 1 || descriptor.projectRoot !== project || descriptor.sessionId !== identity.sessionId ||
       !Number.isInteger(descriptor.port) || descriptor.port < 1 || descriptor.port > 65535 ||
       typeof descriptor.token !== 'string' || !/^[a-zA-Z0-9_-]{43}$/.test(descriptor.token)) throw fail('INVALID_SESSION', 'Canvas session descriptor is invalid.');
-  const longOperation = ['open_canvas', 'canvas_document_open', 'canvas_document_import', 'canvas_community_import', 'canvas_autosave', 'canvas_save', 'canvas_history_restore'].includes(name) || name === 'canvas_native_request' && args.path === '/api/mcp/document';
+  const longOperation = ['open_canvas', 'canvas_document_open', 'canvas_document_import', 'canvas_community_import', 'canvas_autosave', 'canvas_save', 'canvas_history_restore', 'canvas_icon_pack_acquire', 'canvas_icon_pack_update', 'canvas_fonts_prepare'].includes(name) || name === 'canvas_native_request' && args.path === '/api/mcp/document';
   const timeoutMs = identity.timeoutMs ?? (longOperation ? 120_000 : 30_000);
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) throw fail('INVALID_SESSION_TIMEOUT', 'Canvas session timeout must be between 1 and 120000 milliseconds.');
   const body = JSON.stringify({ sessionId: identity.sessionId, name, arguments: args });

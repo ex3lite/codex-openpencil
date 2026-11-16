@@ -118,6 +118,9 @@ with the generic `manifest` argument after verifying their original Community
 page, author, GitHub release archive layout and license. The preset is a catalog
 entry; its files are downloaded to the global cache instead of bundled into each
 project or the plugin.
+The complete original ZIP and every icon's checksum/index are retained at
+acquisition. Individual SVG files are expanded only for previews or selection,
+so acquiring a large pack does not write tens of thousands of small files.
 
 If Community metadata or its CDN rejects a server download, use an authorized
 ordinary browser download of the original cover. Pass its absolute `coverPath`

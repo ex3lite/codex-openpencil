@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -52,11 +52,13 @@ test('ZIP rejects traversal, duplicate names, symlinks, encrypted input, bombs, 
 });
 
 test('full pack cache remains grouped; bounded search selects exactly one project reference with source identity and license',async t=>{
- const {library,dataset,requests}=await fixture(t);
+ const {library,dataset,requests,root}=await fixture(t);
  const before=await library.list();assert.equal(before.packs[0].originalCommunityId,'800815864899415771');assert.equal(before.packs[0].installed,false);
  const acquired=await library.acquire({manifest});assert.equal(acquired.count,3);assert.equal(acquired.iconCount,2);assert.equal(acquired.originalCommunityId,'123456789');assert.equal(acquired.files,undefined);assert.equal(acquired.licenseText,undefined);
+ assert.equal((await readdir(join(root,'library','packs','objects'))).filter(name=>name.endsWith('.svg')).length,0);
  assert.equal((await dataset.index()).assets.length,0);assert.equal(acquired.coverStatus,'unavailable');assert.equal(acquired.cover,null);
  const search=await library.search({packId:manifest.id,query:'Buildings',limit:1,previews:true});assert.equal(search.total,1);assert.equal(search.icons[0].key,'line/regular/house.svg');assert.match(search.icons[0].previewDataUrl,/^data:image\/svg/);
+ assert.equal((await readdir(join(root,'library','packs','objects'))).filter(name=>name.endsWith('.svg')).length,1);
  assert.equal((await library.search({packId:manifest.id,query:'house',allVariants:true})).total,2);
  await assert.rejects(library.search({packId:manifest.id,limit:33}),/Invalid/);
  const selected=await library.select({packId:manifest.id,key:search.icons[0].key});assert.equal(selected.sourcePack.originalCommunityId,'123456789');assert.equal(selected.sourcePack.revision,'v1');assert.equal(selected.sourcePack.archiveSha256,acquired.archiveSha256);
@@ -102,6 +104,14 @@ test('custom pack requires public original Figma and GitHub identity and rejects
  await assert.rejects(library.acquire({manifest}),/inactive/);assert.equal((await library.index()).packs.length,0);assert.equal((await dataset.index()).assets.length,0);
  assert.equal(iconPackTools.length,6);assert.equal(COOLICONS_PRESET.communityUrl.match(/file\/(\d+)/)[1],'800815864899415771');
  assert.ok(iconPackTools.every(tool=>tool.inputSchema.additionalProperties===false));
+});
+
+test('lazy icon extraction verifies the retained complete archive and never redownloads corrupt bytes',async t=>{
+ const {library,dataset,root,requests}=await fixture(t);await library.acquire({manifest});
+ const pack=await library.revision(manifest.id),count=requests.length;
+ await writeFile(join(root,'library','packs','archives',`${pack.archiveSha256}.zip`),'corrupt');
+ await assert.rejects(library.select({packId:manifest.id,key:'line/regular/house.svg'}),/archive checksum/);
+ assert.equal(requests.length,count);assert.equal((await dataset.index()).assets.length,0);
 });
 
 test('original cover can be acquired from the exact Community og:image without changing source revision or icons',async t=>{

@@ -164,7 +164,7 @@ export class IconPackLibrary {
     const licenseText=licenseBytes.toString('utf8');
     if(!licenseText.trim()||/^(?:unknown|noassertion)$/i.test(def.licenseSpdx))throw Error('Supply a verified original upstream license identifier.');
     if(def.id==='coolicons'&&(!licenseText.includes('MIT License')||!licenseText.includes('Kryston Schwarze')))throw Error('Coolicons upstream MIT attribution mismatch.');
-    const root=def.svgRoot?`${def.svgRoot}/`:'';const files=[],objects=new Map();
+    const root=def.svgRoot?`${def.svgRoot}/`:'';const files=[];
     let categories=new Map();
     if(entries.has('manifest.json')) {
       const upstream=JSON.parse(entries.get('manifest.json'));
@@ -175,7 +175,7 @@ export class IconPackLibrary {
       const key=path.slice(root.length),parts=key.slice(0,-4).split('/');
       if((def.layout==='name'&&parts.length!==1)||(def.layout==='style/radius/name'&&parts.length!==3)||parts.some(p=>!/^[a-zA-Z0-9_-]+$/.test(p)))throw Error('SVG path does not match declared pack layout.');
       validateContent(bytes,'svg');const sha256=digest(bytes),name=parts.at(-1),style=parts.length===3?parts[0]:'default',radius=parts.length===3?parts[1]:'default';
-      files.push({key,path,name,style,radius,category:categories.get(name)||'',sha256,bytes:bytes.length});objects.set(sha256,bytes);
+      files.push({key,path,name,style,radius,category:categories.get(name)||'',sha256,bytes:bytes.length});
     }
     if(!files.length)throw Error('Archive contains no SVG icons in its declared root.');
     files.sort((a,b)=>a.key.localeCompare(b.key));
@@ -194,11 +194,7 @@ export class IconPackLibrary {
       const currentRevision=current?(await this.revision(def.id)).revision:null;
       if(currentRevision!==expectedRevision)throw Error('Icon pack revision changed; inspect it before retrying.');
       await this.archive(archiveSha256,archive.bytes);
-      const pending=[...objects];
-      for(let offset=0;offset<pending.length;offset+=16) {
-        const results=await Promise.allSettled(pending.slice(offset,offset+16).map(([sha256,bytes])=>this.object(sha256,'svg',bytes)));
-        const failed=results.find(result=>result.status==='rejected');if(failed)throw failed.reason;
-      }
+      // The complete durable archive is authoritative; expand individual SVGs on demand.
       await this.object(value.licenseSha256,'txt',licenseBytes);
       await atomicBytes(join(this.directory,'revisions',`${manifestSha256}.json`),serialized);
       index.packs=index.packs.filter(p=>p.id!==def.id);index.packs.push({id:def.id,manifestSha256});
@@ -245,19 +241,31 @@ export class IconPackLibrary {
     const icons=[];
     for(const file of matches.slice(offset,offset+limit)) {
       const row={...file};
-      if(previews){const bytes=await this.iconBytes(file);if(bytes.length<=128*1024)row.previewDataUrl=`data:image/svg+xml;base64,${bytes.toString('base64')}`;}
+      if(previews){const bytes=await this.iconBytes(pack,file);if(bytes.length<=128*1024)row.previewDataUrl=`data:image/svg+xml;base64,${bytes.toString('base64')}`;}
       icons.push(row);
     }
     return {packId,revision:pack.revision,total:matches.length,offset,style,radius,icons};
   }
-  async iconBytes(file) {
-    const bytes=await safeBytes(join(this.directory,'objects',`${file.sha256}.svg`),MAX_FILE);
+  async iconBytes(pack,file) {
+    let bytes;
+    try{bytes=await safeBytes(join(this.directory,'objects',`${file.sha256}.svg`),MAX_FILE);}
+    catch(error){
+      if(error.code!=='ENOENT')throw error;
+      if(this.unpacked?.sha256!==pack.archiveSha256) {
+        const archive=await safeBytes(join(this.directory,'archives',`${pack.archiveSha256}.zip`),MAX_ARCHIVE);
+        if(archive.length!==pack.archiveBytes||digest(archive)!==pack.archiveSha256)throw Error('Original pack archive checksum changed.');
+        this.unpacked={sha256:pack.archiveSha256,files:readIconZip(archive)};
+      }
+      bytes=this.unpacked.files.get(file.path);
+      if(!bytes||digest(bytes)!==file.sha256||bytes.length!==file.bytes)throw Error('Archived icon SVG checksum changed.');
+      validateContent(bytes,'svg');await this.object(file.sha256,'svg',bytes);
+    }
     if(digest(bytes)!==file.sha256||bytes.length!==file.bytes)throw Error('Icon SVG checksum changed.');validateContent(bytes,'svg');return bytes;
   }
   async select({packId,key}={}) {
     const pack=await this.revision(packId),file=pack.files.find(f=>f.key===key);
     if(!file)throw Error('Search for an existing pack icon key first.');
-    const bytes=await this.iconBytes(file),license=await safeBytes(join(this.directory,'objects',`${pack.licenseSha256}.txt`),256*1024);
+    const bytes=await this.iconBytes(pack,file),license=await safeBytes(join(this.directory,'objects',`${pack.licenseSha256}.txt`),256*1024);
     if(digest(license)!==pack.licenseSha256)throw Error('Icon pack license checksum changed.');
     // Cover was acquired once for the group; do not refetch Community HTML for every selected icon.
     this.dataset.coverCache.set(pack.communityUrl,Promise.resolve(null));

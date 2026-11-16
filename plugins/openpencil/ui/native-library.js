@@ -1,4 +1,4 @@
-// Local assets retain their source and license. Community discovery runs in Codex.
+// Local assets retain provenance. Remote Community search uses direct MCP.
 const nativeLibrary = (() => {
   async function open({show,drawer,make,button}) {
     show('library','Общая библиотека');
@@ -24,6 +24,7 @@ const nativeLibrary = (() => {
     drawer.append(details);
     if(typeof nativeFonts!=='undefined')await nativeFonts.section({drawer,make,button});
     if(typeof nativeIconPacks!=='undefined')await nativeIconPacks.section({drawer,make,button});
+    const catalog=typeof nativeCommunityCatalog!=='undefined'?await nativeCommunityCatalog.section({drawer,make,button,onAcquire:load}):null;
     let scope='global';
     const scopes=make('div',null,'library-scopes');
     const all=button('Вся библиотека',()=>setScope('global')),project=button('В этом проекте',()=>setScope('project'));
@@ -37,7 +38,7 @@ const nativeLibrary = (() => {
       const data=await nativeEditor.call('canvas_community_search',{scope,query:input.value,limit:50,previews:true});
       if(version!==queryVersion)return;
       results.replaceChildren();
-      if(!data.assets.length)results.append(make('p','Ресурсов пока нет. Найдите нужное в Community через Codex или добавьте стартовые иконки.'));
+      if(!data.assets.length)results.append(make('p','Ресурсов пока нет. Найдите нужное в каталоге Community выше или добавьте стартовые иконки.'));
       for(const asset of data.assets.slice().sort((a,b)=>(a.kind==='ui-kit'?-1:0)-(b.kind==='ui-kit'?-1:0)||Number(!!b.cover)-Number(!!a.cover))){
         const compactIcon=asset.kind==='icon'&&asset.previewDataUrl;
         const item=make('article',null,'library-card'+(compactIcon?' library-icon-card':''));
@@ -78,17 +79,14 @@ const nativeLibrary = (() => {
       }
     }
     search.append(input,button('Найти',load));drawer.append(search);
-    const request=async(seed=false)=>{
-      if(!nativeBridge.capabilities.message?.text)throw Error('Напишите запрос на поиск ресурсов в этом чате.');
-      const settings=await nativeEditor.call('canvas_community_settings');
-      const autonomy=settings.autonomous!==false?'Самостоятельно выбери подходящие ресурсы, скачай, разбери и добавь нужные компоненты в текущий проект. Не спрашивай подтверждение каждого выбора.':'Предложи подходящие ресурсы для выбора.';
-      const policy=settings.verifyLicenses===false?'Проверка лицензий отключена пользователем: сохраняй известные лицензии, неизвестные явно отмечай как ответственность пользователя. Не придумывай разрешения.':'Проверь источник и сохрани подтверждение лицензии.';
-      const text=seed?'Добавь стартовые иконки Lucide в локальную библиотеку OpenBrush этого проекта через canvas_community_seed.':'Найди в Figma Community '+(input.value.trim()||'подходящие иконки и UI Kit для текущего проекта')+'. '+autonomy+' '+policy+' Ищи широко среди публичных Community-ресурсов, официальных сайтов авторов и репозиториев. Скачай оригинальную обложку с Community-страницы (og:image) вместе с источником; не подменяй её рендером содержимого. Скачай доступные ресурсы в локальный датасет OpenBrush этого проекта. Используй workflow Community из навыка OpenBrush. Не ограничивайся ссылками.';
+    const request=async()=>{
+      if(!nativeBridge.capabilities.message?.text)throw Error('Напишите запрос на добавление стартовых иконок в этом чате.');
+      const text='Добавь стартовые иконки Lucide в локальную библиотеку OpenBrush этого проекта через canvas_community_seed.';
       const result=await nativeBridge.request('ui/message',{role:'user',content:[{type:'text',text}]});
       if(result?.isError)throw Error('Codex не принял запрос.');
       nativeEditor.status('Запрос передан в этот чат');
     };
-    drawer.append(button('Найти в Figma Community',()=>request()),button('Добавить иконки Lucide',()=>request(true)),button('Обновить библиотеку',load),results);
+    drawer.append(button('Найти в Figma Community',()=>{if(!catalog)throw Error('Обновите плагин для поиска в Community.');return catalog.search(input.value.trim()||'UI Kit');}),button('Добавить иконки Lucide',()=>request()),button('Обновить библиотеку',load),results);
     await load();
   }
   return {open};

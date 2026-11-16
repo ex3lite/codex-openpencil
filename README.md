@@ -13,7 +13,7 @@
   <a href="./README.ru.md"><b>Русский — OpenBrush 0.6</b></a> · <a href="./README.md">English</a> · <a href="./README.zh.md">简体中文</a>
 </p>
 
-This fork is named **OpenBrush**. Version 0.6 binds its native Codex panel to the
+This fork is named **OpenBrush**. Version 0.11 binds its native Codex panel to the
 current chat's project automatically and saves `.op` files directly in that folder.
 See the [fork setup](./README.ru.md) and [workspace behavior](./docs/workspace.md).
 The upstream installation and release references below describe OpenPencil;
@@ -38,6 +38,27 @@ internal plugin identifiers remain compatible.
   <img src="./docs/images/codex-openpencil-banner.png" alt="Codex conversation alongside the OpenPencil canvas, showing the MŌDE fashion app home and product detail screens" width="100%" />
 </p>
 <p align="center"><sub>Design in a Codex conversation, refine on an editable OpenPencil canvas — MŌDE fashion app home and product detail screens.</sub></p>
+
+## Direct Figma Community catalog
+
+OpenBrush exposes `canvas_community_catalog_status/search/get/acquire/check`.
+A deterministic public Community reader in the connected Kakadu Browser Agent
+extension searches the actual Figma catalog and reads original authors, covers,
+terms and public download links. It does not invoke a model or a search engine.
+The library drawer uses the same MCP tools; browsing adds no chat attachments.
+
+Configure the private bridge with
+`node scripts/configure-community-browser.mjs EXTENSION_ID /absolute/private/bridge`.
+An updated reader and running Chrome are required. Offline/unsupported sources
+return explicit errors. Cookies, credentials and private Figma APIs are not read.
+
+A standalone stdio MCP entrypoint is also provided at
+`plugins/openpencil/scripts/figma-community-mcp.mjs --project-root /absolute/project`,
+with `figma_community_status/search/get/acquire/check`. Codex already receives
+these capabilities through OpenBrush; no duplicate MCP server is needed.
+Reference acquisition keeps original cover bytes and provenance in the shared
+library. Editable acquisition requires an observed public .fig/.op/.svg original;
+a preview is never reported as editable layers.
 
 ## One-prompt install and first design
 

@@ -11,10 +11,10 @@ const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 48 * 1024 * 1024;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const READ_TOOLS = new Set(['open_canvas', 'canvas_status', 'canvas_selection', 'canvas_documents',
-  'canvas_comments', 'canvas_agents', 'canvas_codegen_poll', 'canvas_history', 'canvas_history_status', 'canvas_history', 'canvas_history_status', 'canvas_community_search', 'canvas_community_file', 'canvas_fonts_status', 'canvas_fonts_library','canvas_icon_pack_list','canvas_icon_pack_search','canvas_icon_pack_check']);
+  'canvas_comments', 'canvas_agents', 'canvas_codegen_poll', 'canvas_history', 'canvas_history_status', 'canvas_history', 'canvas_history_status', 'canvas_community_search', 'canvas_community_file', 'canvas_fonts_status', 'canvas_fonts_library','canvas_icon_pack_list','canvas_icon_pack_search','canvas_icon_pack_check','canvas_community_catalog_status','canvas_community_catalog_search','canvas_community_catalog_get','canvas_community_catalog_check','canvas_community_catalog_cover']);
 const APP_TOOLS = new Set([...READ_TOOLS, 'canvas_transfer', 'canvas_native_request', 'canvas_document_open', 'canvas_document_import',
   'canvas_comment_create', 'canvas_comment_update', 'canvas_detach_source', 'canvas_checkpoint', 'canvas_save',
-  'canvas_codegen_prepare', 'canvas_codegen_cancel', 'canvas_autosave', 'canvas_history_restore', 'canvas_autosave', 'canvas_history_restore', 'canvas_community_import', 'canvas_community_settings', 'canvas_fonts_prepare','canvas_icon_pack_acquire','canvas_icon_pack_select','canvas_icon_pack_update']);
+  'canvas_codegen_prepare', 'canvas_codegen_cancel', 'canvas_autosave', 'canvas_history_restore', 'canvas_autosave', 'canvas_history_restore', 'canvas_community_import', 'canvas_community_settings', 'canvas_fonts_prepare','canvas_icon_pack_acquire','canvas_icon_pack_select','canvas_icon_pack_update','canvas_community_catalog_acquire']);
 const fail = (code, message, uncertain = false) => Object.assign(new Error(message), { code, ...(uncertain && { uncertain: true }) });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const uncertain = () => fail('UNCERTAIN_WRITE', 'The canvas operation may have applied. Inspect the current document before deciding what to do next; it was not retried.', true);
@@ -172,7 +172,7 @@ export async function callCanvasSession(identity, name, args = {}) {
   if (descriptor.schemaVersion !== 1 || descriptor.projectRoot !== project || descriptor.sessionId !== identity.sessionId ||
       !Number.isInteger(descriptor.port) || descriptor.port < 1 || descriptor.port > 65535 ||
       typeof descriptor.token !== 'string' || !/^[a-zA-Z0-9_-]{43}$/.test(descriptor.token)) throw fail('INVALID_SESSION', 'Canvas session descriptor is invalid.');
-  const longOperation = ['open_canvas', 'canvas_document_open', 'canvas_document_import', 'canvas_community_import', 'canvas_autosave', 'canvas_save', 'canvas_history_restore', 'canvas_icon_pack_acquire', 'canvas_icon_pack_update', 'canvas_fonts_prepare'].includes(name) || name === 'canvas_native_request' && args.path === '/api/mcp/document';
+  const longOperation = name.startsWith('canvas_community_catalog_') || ['open_canvas', 'canvas_document_open', 'canvas_document_import', 'canvas_community_import', 'canvas_autosave', 'canvas_save', 'canvas_history_restore', 'canvas_icon_pack_acquire', 'canvas_icon_pack_update', 'canvas_fonts_prepare'].includes(name) || name === 'canvas_native_request' && args.path === '/api/mcp/document';
   const timeoutMs = identity.timeoutMs ?? (longOperation ? 120_000 : 30_000);
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) throw fail('INVALID_SESSION_TIMEOUT', 'Canvas session timeout must be between 1 and 120000 milliseconds.');
   const body = JSON.stringify({ sessionId: identity.sessionId, name, arguments: args });

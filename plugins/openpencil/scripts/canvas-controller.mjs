@@ -21,6 +21,7 @@ import { readCanvasSelection } from './canvas-selection.mjs';
 import { importCanvasImage } from './canvas-images.mjs';
 import { CanvasFonts, fontTools } from './canvas-fonts.mjs';
 import { iconPackTools, dispatchIconPackTool } from './icon-packs.mjs';
+import { catalogTools, dispatchCatalogTool } from './community-catalog.mjs';
 import { prepareCanvasBrowser, browserLaunchStatus } from './browser-launch.mjs';
 import { prepareCodegen, completeCodegen, pollCodegen, cancelCodegen, codegenSummary, frameworks } from './canvas-codegen.mjs';
 
@@ -36,6 +37,7 @@ export const canvasTools = [
   ...communityTools,
   ...fontTools,
   ...iconPackTools,
+  ...catalogTools,
   ...workspaceTools,
   { name: 'canvas_detach_source', description: 'App-only: detach the previous save destination after a successful New/Open/import. Does not write or delete any file.',
     inputSchema: schema({}), annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
@@ -192,6 +194,7 @@ export class CanvasController {
     }
     if (name === 'canvas_native_request') return nativeRequest(this,args);
     if (name === 'open_canvas' || name === 'canvas_open_browser') return this.open(args);
+    if(name==='canvas_community_catalog_status')return toolResult(await dispatchCatalogTool(this,name,args));
     if (!this.session) throw new Error('Open a managed canvas with canvas_open_browser or open_canvas first.');
     if(this.projectSwitchUncertain && !['canvas_status','canvas_selection','canvas_documents','canvas_comments','canvas_agents','canvas_history','canvas_history_status'].includes(name)) throw Error('Переключение макета не подтверждено. Изменения остановлены; откройте сохранённый проект заново.');
     if(name==='canvas_autosave') {
@@ -203,6 +206,7 @@ export class CanvasController {
     if(name==='canvas_history_restore') return toolResult(await this.restoreHistory(args));
     if(name==='canvas_community_file') return communityAssetFile(this,args);
     if(name.startsWith('canvas_icon_pack_'))return toolResult(await dispatchIconPackTool(this,name,args));
+    if(name.startsWith('canvas_community_catalog_'))return toolResult(await dispatchCatalogTool(this,name,args));
     if(name.startsWith('canvas_community_')) {
       const result=await dispatchCommunityTool(this,name,args);
       if(name==='canvas_community_settings'&&(args.autonomous!==undefined||args.verifyLicenses!==undefined))this.fonts?.schedule(undefined,{force:true});
@@ -301,7 +305,7 @@ export class CanvasController {
       }
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.10.1' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.11.0' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }

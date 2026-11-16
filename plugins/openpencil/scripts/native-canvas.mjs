@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { resolveRuntime, sha256 } from './editor-runtime.mjs';
 
-export const NATIVE_URI='ui://openbrush/native/v0.10.1.html';
+export const NATIVE_URI='ui://openbrush/native/v0.11.0.html';
 const READ=new Set(['/api/mcp/document','/api/mcp/version','/api/mcp/server','/api/mcp/selection','/api/mcp/indicators']);
 const WRITE=new Set(['/api/mcp/document','/api/mcp/selection','/api/mcp/sync-reset']);
 export function nativeRoute(path,method='GET') {
@@ -57,17 +57,17 @@ export function embedNativeScript(template, script) {
 let cached;
 export async function nativeHtml(runtimeRoot) {
  const runtime=await resolveRuntime(runtimeRoot);
- const [template,transport,bootstrap,engine,info,ck,wasm,ckWasm,host,editor,codegen,contextState,workspace,context,workspaceCss,launch,library,transfer,fonts,packs]=await Promise.all([
+ const [template,transport,bootstrap,engine,info,ck,wasm,ckWasm,host,editor,codegen,contextState,workspace,context,workspaceCss,launch,library,transfer,fonts,packs,catalog]=await Promise.all([
   readFile(new URL('../ui/native.html',import.meta.url),'utf8'),readFile(new URL('../ui/native-transport.js',import.meta.url),'utf8'),
   readFile(new URL('../ui/native-bootstrap.js',import.meta.url),'utf8'),readFile(new URL('../ui/native-engine.js',import.meta.url),'utf8'),
   readFile(new URL('../ui/native-engine.js.json',import.meta.url),'utf8'),readFile(join(runtime.canvasKit,'canvaskit.js'),'utf8'),
   readFile(join(runtime.webBundle,'op_host_web_bg.wasm')),readFile(join(runtime.canvasKit,'canvaskit.wasm')),
-  ...['native-host.js','native-editor.js','native-codegen.js','native-context-state.js','native-workspace.js','native-context.js','native-workspace.css','native-launch.js','native-library.js','native-transfer.js','native-fonts.js','native-icon-packs.js'].map(name=>readFile(new URL('../ui/'+name,import.meta.url),'utf8'))]);
+  ...['native-host.js','native-editor.js','native-codegen.js','native-context-state.js','native-workspace.js','native-context.js','native-workspace.css','native-launch.js','native-library.js','native-transfer.js','native-fonts.js','native-icon-packs.js','native-community-catalog.js'].map(name=>readFile(new URL('../ui/'+name,import.meta.url),'utf8'))]);
  if(JSON.parse(info).entrySha256!==sha256(await readFile(join(runtime.webBundle,'op_host_web.js')))||JSON.parse(info).engineSha256!==sha256(wasm))throw Error('Rebuild native editor glue for this runtime: node scripts/build-native-editor.mjs');
- const cacheKey=sha256(Buffer.from(template+transport+bootstrap+engine+host+editor+codegen+contextState+workspace+context+workspaceCss+launch+library+transfer+fonts+packs));
+ const cacheKey=sha256(Buffer.from(template+transport+bootstrap+engine+host+editor+codegen+contextState+workspace+context+workspaceCss+launch+library+transfer+fonts+packs+catalog));
  if(cached?.root===runtime.root&&cached.key===cacheKey)return cached.html;
  const binaries={engine:gzipSync(wasm).toString('base64'),canvaskit:gzipSync(ckWasm).toString('base64')};
- const script=`const OP_BINARIES=${JSON.stringify(binaries)};\n${transfer}\n${host}\n${transport}\n${ck}\n${engine}\n${editor}\n${codegen}\n${contextState}\n${workspace}\n${context}\n${launch}\n${fonts}\n${packs}\n${library}\n${bootstrap}`;
+ const script=`const OP_BINARIES=${JSON.stringify(binaries)};\n${transfer}\n${host}\n${transport}\n${ck}\n${engine}\n${editor}\n${codegen}\n${contextState}\n${workspace}\n${context}\n${launch}\n${fonts}\n${packs}\n${catalog}\n${library}\n${bootstrap}`;
  const html=embedNativeScript(template.replace('/* WORKSPACE_CSS */',workspaceCss),script);
  cached={root:runtime.root,key:cacheKey,html};return html;
 }

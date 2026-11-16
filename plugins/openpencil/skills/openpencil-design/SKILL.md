@@ -84,8 +84,9 @@ keep text, controls and layout as native nodes.
 ## Community assets and references
 
 When a brief needs reusable icons, UI kits or references, search the project’s
-local dataset with `canvas_community_search`, then use host web search for public
-Figma Community discovery when needed. Read the [Community asset workflow](references/community.md)
+local dataset with `canvas_community_search`, then use `canvas_community_catalog_search` for direct public
+Figma Community discovery when needed. Do not substitute Perplexity or another
+search engine for the catalog. Read the [Community asset workflow](references/community.md)
 before acquisition. Preserve author/source/license metadata, use supported public
 upstream downloads or authorized local exports, and import by asset ID. Never use
 a numeric Community ID as a REST file key or scrape private session endpoints.

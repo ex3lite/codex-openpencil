@@ -1,0 +1,10 @@
+import {isAbsolute,join} from 'node:path';
+import {homedir} from 'node:os';
+import {stateRoot} from '../plugins/openpencil/scripts/editor-runtime.mjs';
+import {privateDirectory,atomicBytes} from '../plugins/openpencil/scripts/library-storage.mjs';
+import {CommunityBrowser} from '../plugins/openpencil/scripts/community-browser.mjs';
+const [extensionId,bridgeRoot=join(homedir(),'.kakadu-browser-agent')]=process.argv.slice(2);
+if(!/^[a-p]{32}$/.test(extensionId||'')||!isAbsolute(bridgeRoot))throw Error('Usage: node scripts/configure-community-browser.mjs EXTENSION_ID [/absolute/private/bridge/root]');
+await privateDirectory(stateRoot());
+await atomicBytes(join(stateRoot(),'community-browser.json'),JSON.stringify({schemaVersion:1,extensionId,bridgeRoot})+'\n');
+console.log(JSON.stringify(await new CommunityBrowser().status()));

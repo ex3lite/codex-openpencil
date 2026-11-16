@@ -1,3 +1,4 @@
+import { dispatchTransfer, consumeTransfer, closeTransfers, transferTool } from './canvas-transfer.mjs';
 import { NATIVE_URI, nativeHtml, nativeRequest, nativeTools } from './native-canvas.mjs';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -34,6 +35,7 @@ export const canvasTools = [
   ...workspaceTools,
   { name: 'canvas_detach_source', description: 'App-only: detach the previous save destination after a successful New/Open/import. Does not write or delete any file.',
     inputSchema: schema({}), annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
+  transferTool,
   ...nativeTools,
   { name: 'open_canvas', title: 'OpenBrush', description: 'Open OpenBrush inside this Codex chat. Automatically use this chat current workspace as projectRoot; do not ask the user to choose it. Host MCP roots are used when supplied. Optional filePath/documentId opens a project document; omit for a new draft. All later tools use this canvas. Return its MCP App entrypoint, not a browser fallback.',
     inputSchema: schema({ filePath, projectRoot: {type:'string',description:'Fill automatically from this chat workspace. If omitted, use host MCP roots. Never ask for a separate project folder or use a global latest document.'}, documentId:{type:'string',description:'Registered document ID inside this project.'},launchId:{type:'string',description:'When openBrushLaunch is present in this chat App context, pass its launchId to connect that waiting panel to this canvas.'} }), annotations: { destructiveHint: false, openWorldHint: false },
@@ -85,6 +87,8 @@ export const canvasTools = [
 ];
 
 const toolResult = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
+
+for (const tool of canvasTools) if (tool.inputSchema?.properties?.docJson) tool.inputSchema.properties.snapshotToken = { type: 'string' };
 
 export class CanvasController {
   constructor(options = {}) { this.options = options; this.queue = Promise.resolve(); this.session = null; this.panel = null; }
@@ -170,6 +174,14 @@ export class CanvasController {
         return toolResult(await this.agents.dispatch(action,operation));
       }
       return toolResult(await callCanvasAgent(canvasId,action,operation,{projectRoot}));
+    }
+    if(name==='canvas_transfer') {
+      const transfer=await dispatchTransfer(this,args);
+      return {content:[{type:'text',text:JSON.stringify({action:args.action,ready:transfer.ready??null})}],_meta:{transfer}};
+    }
+    if(args.snapshotToken) {
+      const {snapshotToken,...rest}=args;
+      args={...rest,docJson:await consumeTransfer(this,snapshotToken,'snapshot')};
     }
     if (name === 'canvas_native_request') return nativeRequest(this,args);
     if (name === 'open_canvas' || name === 'canvas_open_browser') return this.open(args);
@@ -263,7 +275,7 @@ export class CanvasController {
       if (this.session && message.method === 'tools/call' && !upstream?.error && !upstream?.result?.isError) this.persistence?.changed();
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.8.0' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.9.0' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }
@@ -279,6 +291,7 @@ export class CanvasController {
   async close() {
     await this.sessionBroker?.close();this.sessionBroker=null;
     await this.queue;
+    await closeTransfers(this);
     await this.quiesceDocumentAgents();
     if (this.persistence && !this.projectSwitchUncertain) {
       try { await this.persistence.boundary(); } catch { /* Keep recovery and stopped status on shutdown. */ }

@@ -1,10 +1,10 @@
+import { MAX_DOCUMENT_BYTES, DOCUMENT_ENVELOPE_BYTES } from './document-limits.mjs';
 import { lstat, readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
-import { liveDocument } from './document-format.mjs';
+import { liveDocument, transportDocument } from './document-format.mjs';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const MAX_DOCUMENT_BYTES = 32 * 1024 * 1024;
 
 function mimeType(bytes) {
   if (bytes.length >= 33 && bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a' &&
@@ -16,7 +16,7 @@ function mimeType(bytes) {
 }
 
 function target(live, pageId, nodeId) {
-  const document = liveDocument(live.document);
+  const document = transportDocument(live.document);
   const page = document.pages?.length ? document.pages[live.activePageIndex] : document;
   if (!page || (document.pages?.length ? page.id : '0') !== pageId) {
     throw new Error('The active page changed. Read the canvas and confirm the image target again.');
@@ -55,8 +55,8 @@ export async function importCanvasImage(session, { filePath, nodeId, pageId, exp
   current.node.src = src;
   current.node.imagePrompt = null;
   current.node.imageSearchQuery = null;
-  if (Buffer.byteLength(JSON.stringify(current.document)) > MAX_DOCUMENT_BYTES) {
-    throw new Error('Embedding this image would exceed the 32 MiB document limit. Use a smaller asset.');
+  if (Buffer.byteLength(JSON.stringify(transportDocument(current.document))) > MAX_DOCUMENT_BYTES) {
+    throw new Error('Embedding this image would exceed the 256 MiB document limit. Use a smaller asset.');
   }
   const reply = await session.forward({ jsonrpc: '2.0', id: 'canvas-import-image', method: 'tools/call',
     params: { name: 'update_node', arguments: { nodeId, pageId,
@@ -65,7 +65,8 @@ export async function importCanvasImage(session, { filePath, nodeId, pageId, exp
     throw new Error('Image import was not confirmed. Inspect the canvas before repeating it; the write was not retried.');
   }
   const after = await session.document();
-  if (target(after, pageId, nodeId).node.src !== src) {
+  const confirmed = target(after, pageId, nodeId);
+  if (liveDocument({ children: [confirmed.node], images: confirmed.document.images }).children[0].src !== src) {
     throw new Error('Image import readback did not match. Inspect the target before making another change.');
   }
   return { nodeId, pageId, version: after.version, bytes: bytes.length, mimeType: mime,

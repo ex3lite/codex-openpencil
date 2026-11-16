@@ -47,6 +47,12 @@ Load only the relevant connected design guidelines/style guides/UI kits.
 Use [node and layout reference](references/node-schema.md) for field conventions;
 the live tool schemas and guidelines take precedence over this bundled snapshot.
 Reuse the document's variables, components, and style before inventing new ones.
+When reusable resources help the active brief, follow the [global library and
+autonomous acquisition workflow](references/community.md): search downloaded
+resources first, then discover original public sources, acquire and index them,
+and import a separate project copy. With autonomy enabled, do not ask repeatedly
+for source selection, download, parsing or import approval. Respect the current
+license policy and explicit user constraints.
 For a new phone screen, load `get_guidelines` with `topic: "mobile"` before
 creating its root frame. Use the Rust runtime's canonical status bar; do not
 hand-draw a replacement or use emoji for system indicators.

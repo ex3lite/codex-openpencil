@@ -44,9 +44,9 @@ function request(url, records, signal) {
     req.once('error',reject);
   });
 }
-export async function fetchPublicBytes(input,{limit=32*1024*1024,lookupImpl=lookup,fetchImpl,redirects=4}={}) {
+export async function fetchPublicBytes(input,{limit=32*1024*1024,lookupImpl=lookup,fetchImpl,redirects=4,timeoutMs=30000}={}) {
   let url = publicHttpsUrl(input), remaining = redirects;
-  const signal = AbortSignal.timeout(30000);
+  const signal = AbortSignal.timeout(timeoutMs);
   while (true) {
     const records = await addressesFor(url,lookupImpl);
     const response = fetchImpl ? await fetchImpl(url.href,{redirect:'manual',signal,credentials:'omit',headers:{Accept:'application/octet-stream,text/html,image/*,text/plain'}}) : await request(url,records,signal);

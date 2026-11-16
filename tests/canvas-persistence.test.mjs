@@ -1,3 +1,4 @@
+import http from 'node:http';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, realpath, rm, readFile, writeFile } from 'node:fs/promises';
@@ -152,13 +153,18 @@ test('history restore preserves current work, replaces once with CAS and records
   f.state.document = doc('edited'); f.state.version++;
   await f.persistence.flush();
   let writes = 0;
-  t.mock.method(globalThis, 'fetch', async (_url, args) => {
+  const server = http.createServer(async (request, response) => {
     writes++;
-    const body = JSON.parse(args.body);
+    const chunks = []; for await (const chunk of request) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks));
     assert.equal(body.baseVersion, f.state.version);
     f.state.document = body.document; f.state.version++;
-    return new Response(JSON.stringify({ ok: true, version: f.state.version }), { status: 200 });
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ ok: true, version: f.state.version }));
   });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  f.session.port = server.address().port;
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
   const result = await f.controller.restoreHistory({ id: original.id, docJson: f.snapshot() });
   assert.equal(writes, 1); assert.equal(result.version, 2);
   assert.equal(JSON.parse(await readFile(f.file)).children[0].name, 'original');
@@ -172,7 +178,13 @@ test('uncertain restore freezes source writes and keeps the previous saved file'
   const original = (await f.persistence.list()).entries[0];
   f.state.document = doc('edited'); f.state.version++;
   let writes = 0;
-  t.mock.method(globalThis, 'fetch', async () => { writes++; throw Error('connection lost after apply'); });
+  const server = http.createServer(async (request, response) => {
+    writes++; for await (const _chunk of request) {};
+    response.destroy();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  f.session.port = server.address().port;
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
   await assert.rejects(f.controller.restoreHistory({ id: original.id, docJson: f.snapshot() }), error => error.code === 'PROJECT_SWITCH_UNCERTAIN');
   await assert.rejects(f.persistence.flush(), error => error.code === 'AUTOSAVE_STOPPED');
   assert.equal(writes, 1);

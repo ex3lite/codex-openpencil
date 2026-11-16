@@ -1,11 +1,13 @@
+import { nativeDocumentHttp } from './native-document-http.mjs';
+import { MAX_DOCUMENT_BYTES, DOCUMENT_ENVELOPE_BYTES } from './document-limits.mjs';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { diskDocument, liveDocument } from './document-format.mjs';
+import { diskDocument, liveDocument, transportDocument } from './document-format.mjs';
 
 export const MAX_CANVAS_AGENTS = 10;
 const COLORS = ['#E25B63', '#218F89', '#527DE0', '#8461CE', '#36965C', '#C76C36', '#B34D91', '#458AA8', '#858231', '#A76554'];
 const DEFAULT_TTL = 30 * 60_000;
-const MAX_BYTES = 32 * 1024 * 1024;
+const MAX_BYTES = DOCUMENT_ENVELOPE_BYTES;
 const fail = (code, message, details) => Object.assign(new Error(message), { code, ...(details && { details }) });
 const identifier = value => typeof value === 'string' && value.length > 0 && value.length <= 200 && !/[\u0000-\u001f]/.test(value);
 const emptyRelay = () => ({ epoch: 0, active: false, cursorAgent: null, nodes: [], frames: [], previews: [], reveals: [] });
@@ -19,7 +21,7 @@ function treeIndex(document) {
     const stack = page.children.map(node => ({ node, pageId: page.id, parentId: null, depth: 0 }));
     while (stack.length) {
       const entry = stack.pop(), { node, depth } = entry;
-      if (!node || !identifier(node.id) || nodes.has(node.id) || depth > 100 || nodes.size >= 50_000 ||
+      if (!node || !identifier(node.id) || nodes.has(node.id) || depth > 100 || nodes.size >= 500_000 ||
           (node.children !== undefined && !Array.isArray(node.children))) throw fail('INVALID_DOCUMENT', 'Canvas node IDs or tree structure are invalid.');
       nodes.set(node.id, entry);
       for (const child of node.children || []) stack.push({ node: child, pageId: page.id, parentId: node.id, depth: depth + 1 });
@@ -51,17 +53,14 @@ export async function writeAgentDocument(session, document, expectedVersion) {
   session.assertLive();
   const metadata = document.editorMeta || {};
   // Scenario has no wrapper override in Rust, so keep it inside editorMeta.
-  const body = JSON.stringify({ document: { ...liveDocument(document), editorMeta: metadata }, baseVersion: expectedVersion,
+  const body = JSON.stringify({ document: { ...transportDocument(document), editorMeta: metadata }, baseVersion: expectedVersion,
     ...(metadata.activePageIndex !== undefined && { activePageIndex: metadata.activePageIndex }),
     ...(metadata.preserveAuthoredGeometry !== undefined && { preserveAuthoredGeometry: metadata.preserveAuthoredGeometry }),
   });
-  if (Buffer.byteLength(body) > MAX_BYTES) throw fail('DOCUMENT_TOO_LARGE', 'Canvas document exceeds 32 MiB.');
+  if (Buffer.byteLength(body) > MAX_BYTES) throw fail('DOCUMENT_TOO_LARGE', 'Canvas document exceeds 256 MiB.');
   let response;
   try {
-    response = await fetch(`http://127.0.0.1:${session.port}/api/mcp/document`, {
-      method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', 'X-OpenPencil-Token': session.token },
-      body, signal: AbortSignal.timeout(15_000),
-    });
+    response = await nativeDocumentHttp(session.port, { method: 'POST', token: session.token, body });
   } catch { throw fail('UNCERTAIN_WRITE', 'Canvas write outcome is unknown. Read the leased roots before deciding what to do next.'); }
   let value;
   try { value = await response.json(); }
@@ -145,10 +144,10 @@ export class CanvasAgents {
 
   read({ leaseId } = {}) {
     return this.enqueue(async () => {
-      const lease = this.requireLease(leaseId), live = await this.session.document(), index = treeIndex(liveDocument(live.document));
+      const lease = this.requireLease(leaseId), live = await this.session.document(), index = treeIndex(live.document);
       this.assertRoots(lease, index);
       lease.uncertain = false;
-      return { ...this.publicLease(lease), version: live.version, subtrees: lease.rootIds.map(id => structuredClone(index.get(id).node)) };
+      return { ...this.publicLease(lease), version: live.version, subtrees: lease.rootIds.map(id => liveDocument({ children: [index.get(id).node], images: live.document.images }).children[0]) };
     });
   }
 
@@ -162,11 +161,11 @@ export class CanvasAgents {
       }
       const live = await this.session.document();
       if (live.version !== expectedVersion) throw fail('VERSION_CONFLICT', 'Canvas changed. Read the assigned roots and explicitly rebase the edit.', { version: live.version });
-      live.document = liveDocument(live.document);
+      live.document = transportDocument(live.document);
       const before = treeIndex(live.document);
       this.assertRoots(lease, before);
       const replacements = new Map(subtrees.map(node => [node.id, node]));
-      const document = replaceRoots(diskDocument(live), replacements), after = treeIndex(document);
+      const document = transportDocument(replaceRoots(diskDocument(live), replacements)), after = treeIndex(document);
       for (const [id] of after) if (before.has(id) && !contained(before, id, [...replacements.keys()]) && contained(after, id, [...replacements.keys()])) {
         throw fail('SCOPE_CONFLICT', 'A replacement cannot take a node ID from outside its replaced roots.');
       }

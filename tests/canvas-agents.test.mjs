@@ -250,8 +250,8 @@ test('native CAS sends one request with baseVersion and never retries rejected m
   assert.equal(requests[0].body.baseVersion, 8);
   assert.equal(requests[0].url, '/api/mcp/document');
   assert.equal(requests[0].token, session.token);
-  assert.equal(requests[0].body.document.children[0].src, image);
-  assert.equal(requests[0].body.document.images, undefined);
+  assert.equal(requests[0].body.document.children[0].src, 'op-image:sample');
+  assert.deepEqual(requests[0].body.document.images, { sample: image });
   assert.equal(requests[0].body.document.editorMeta.scenario, 'web');
   assert.equal(requests[0].body.activePageIndex, 1);
   assert.equal(requests[0].body.preserveAuthoredGeometry, true);

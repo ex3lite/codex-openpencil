@@ -20,7 +20,7 @@ const nativeEditor = (() => {
     if (!ready || closed) return Promise.reject(Error('Редактор ещё не готов. Дождитесь загрузки холста.'));
     const requestId = crypto.randomUUID();
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { snapshots.delete(requestId); reject(Error('Редактор не подтвердил последние изменения. Файл не сохранён.')); }, 15000);
+      const timer = setTimeout(() => { snapshots.delete(requestId); reject(Error('Редактор не подтвердил последние изменения. Файл не сохранён.')); }, 120000);
       snapshots.set(requestId, { resolve, reject, timer });
       try { send({ type: 'op-bridge/snapshot', purpose: 'save', requestId }); }
       catch (error) { clearTimeout(timer); snapshots.delete(requestId); reject(error); }

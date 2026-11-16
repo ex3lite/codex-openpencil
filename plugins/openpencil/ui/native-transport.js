@@ -16,7 +16,7 @@ async function localFetch(input,options={}){
  const isAsset=method==='GET'&&/^\/(pkg|assets|canvaskit)\//.test(path);
  let promise=isAsset&&assetCache.get(key);
  if(!promise){promise=nativeBridge.call('canvas_native_request',{path,method,...(body!==undefined?{body:String(body)}:{})}).then(r=>{if(!r._meta?.nativeHttp)throw Error('Нет ответа транспорта редактора');return r._meta.nativeHttp;});if(isAsset)assetCache.set(key,promise);}
- const data=await promise;return new Response(bytesFromBase64(data.body),{status:data.status,headers:{'content-type':data.type}});
+ const data=await promise;return new Response(data.transfer?await nativeTransfer.download(nativeBridge.call,data.transfer):bytesFromBase64(data.body),{status:data.status,headers:{'content-type':data.type}});
 }
 window.fetch=localFetch;
 class McpXMLHttpRequest extends EventTarget {
@@ -28,7 +28,7 @@ class McpXMLHttpRequest extends EventTarget {
  getAllResponseHeaders(){return [...this.responseHeaders].map(([k,v])=>k+': '+v).join('\r\n');}
  overrideMimeType(){}
  abort(){this.aborted=true;this.fire('abort');this.fire('loadend');}
- async send(body){try{const r=await localFetch(this.url,{method:this.method,body,headers:this.headers});if(this.aborted)return;this.status=r.status;this.responseHeaders=r.headers;this.readyState=2;this.fire('readystatechange');const buffer=await r.arrayBuffer();this.responseText=new TextDecoder().decode(buffer);this.response=this.responseType==='arraybuffer'?buffer:this.responseType==='blob'?new Blob([buffer],{type:r.headers.get('content-type')}):this.responseType==='json'?JSON.parse(this.responseText):this.responseText;this.readyState=4;this.fire('readystatechange');this.fire('load');}catch(e){this.status=0;this.readyState=4;this.fire('error');}finally{if(!this.aborted)this.fire('loadend');}}
+ async send(body){try{const r=await localFetch(this.url,{method:this.method,body,headers:this.headers});if(this.aborted)return;this.status=r.status;this.responseHeaders=r.headers;this.readyState=2;this.fire('readystatechange');const buffer=await r.arrayBuffer();this.responseText=['','text','json'].includes(this.responseType)?new TextDecoder().decode(buffer):'';this.response=this.responseType==='arraybuffer'?buffer:this.responseType==='blob'?new Blob([buffer],{type:r.headers.get('content-type')}):this.responseType==='json'?JSON.parse(this.responseText):this.responseText;this.readyState=4;this.fire('readystatechange');this.fire('load');}catch(e){this.status=0;this.readyState=4;this.fire('error');}finally{if(!this.aborted)this.fire('loadend');}}
 }
 window.XMLHttpRequest=McpXMLHttpRequest;
 // CanvasKit's image loader uses Image.src for local library previews. Resolve

@@ -1,9 +1,11 @@
+import { nativeDocumentHttp } from './native-document-http.mjs';
+import { MAX_DOCUMENT_BYTES, DOCUMENT_ENVELOPE_BYTES } from './document-limits.mjs';
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { ProjectCatalog, resolveProjectRoot } from './project-catalog.mjs';
 import { sourceBytes, validateDocument } from './editor-session.mjs';
-import { liveDocument, snapshotMatches } from './document-format.mjs';
+import { transportDocument, snapshotMatches } from './document-format.mjs';
 import { acquireProjectWriter } from './project-writer-lease.mjs';
 
 const attached = Symbol('project-session');
@@ -155,17 +157,14 @@ export async function projectDocuments(controller) {
 
 export async function writeReplacement(controller, document, baseVersion) {
   const session = controller.session;
-  const body = JSON.stringify({ document: liveDocument(document), baseVersion,
+  const body = JSON.stringify({ document: transportDocument(document), baseVersion,
     activePageIndex: document.editorMeta?.activePageIndex ?? 0,
     preserveAuthoredGeometry: document.editorMeta?.preserveAuthoredGeometry ?? true,
     ...(document.editorMeta?.scenario != null ? { scenario: document.editorMeta.scenario } : {}) });
-  if (Buffer.byteLength(body) > 32 * 1024 * 1024) throw fail('DOCUMENT_TOO_LARGE', 'Документ превышает 32 МиБ.');
+  if (Buffer.byteLength(body) > DOCUMENT_ENVELOPE_BYTES) throw fail('DOCUMENT_TOO_LARGE', 'Документ превышает 256 МиБ.');
   let response, value;
   try {
-    response = await fetch(`http://127.0.0.1:${session.port}/api/mcp/document`, {
-      method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', 'X-OpenPencil-Token': session.token },
-      body, signal: AbortSignal.timeout(15_000),
-    });
+    response = await nativeDocumentHttp(session.port, { method: 'POST', token: session.token, body });
     value = await response.json();
   } catch {
     controller.projectSwitchUncertain = true;

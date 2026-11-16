@@ -1,3 +1,4 @@
+import { MAX_DOCUMENT_BYTES, DOCUMENT_ENVELOPE_BYTES } from './document-limits.mjs';
 import { lstat, mkdir, readFile, realpath, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -10,7 +11,7 @@ const fail = message => Object.assign(new Error(message), { code: 'HISTORY_INVAL
 
 /** Immutable snapshots plus an atomically published, bounded index per document. */
 export class CanvasHistory {
-  constructor({ catalog, documentId, maxEntries = 50, maxBytes = 128 * 1024 * 1024 }) {
+  constructor({ catalog, documentId, maxEntries = 50, maxBytes = 2 * MAX_DOCUMENT_BYTES }) {
     if (!UUID.test(documentId)) throw fail('Invalid history document.');
     Object.assign(this, { catalog, documentId, maxEntries, maxBytes });
     this.directory = join(catalog.directory, 'history', documentId);
@@ -35,7 +36,7 @@ export class CanvasHistory {
     if (value.documentId !== this.documentId || !Number.isSafeInteger(value.revision) ||
         !Array.isArray(value.entries) || value.entries.length > 50 || value.entries.some(entry =>
           !UUID.test(entry.id) || !/^[a-f0-9]{64}$/.test(entry.sha256) || !Number.isSafeInteger(entry.bytes) ||
-          entry.bytes < 1 || entry.bytes > 32 * 1024 * 1024 || typeof entry.createdAt !== 'string' ||
+          entry.bytes < 1 || entry.bytes > MAX_DOCUMENT_BYTES || typeof entry.createdAt !== 'string' ||
           !['initial', 'edit', 'restore'].includes(entry.source))) throw fail('History index is invalid.');
     return value;
   }

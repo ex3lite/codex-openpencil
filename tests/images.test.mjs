@@ -84,12 +84,13 @@ test('Import detects PNG/JPEG/WebP by bytes rather than an untrusted extension',
   }
 });
 
-test('Import refuses documents that would exceed the save limit before mutating', async t => {
+test('Image import preserves documents larger than the former 32 MiB limit', async t => {
   const args = await fixture(t), live = value();
   live.document.pages[0].children.push({ id: 'large', type: 'text', content: 'x'.repeat(32 * 1024 * 1024) });
   const host = session(live);
-  await assert.rejects(importCanvasImage(host, args), /document limit/);
-  assert.equal(host.calls.length, 0);
+  await importCanvasImage(host, args);
+  assert.equal(host.calls.length, 1);
+  assert.equal(host.live.document.pages[0].children.at(-1).content.length, 32 * 1024 * 1024);
 });
 
 test('An ambiguous import failure is never retried and readback must confirm the image', async t => {

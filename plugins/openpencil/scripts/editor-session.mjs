@@ -1,3 +1,5 @@
+import { nativeDocumentHttp } from './native-document-http.mjs';
+import { MAX_DOCUMENT_BYTES, DOCUMENT_ENVELOPE_BYTES } from './document-limits.mjs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, writeFile, rename, lstat, rm } from 'node:fs/promises';
@@ -5,10 +7,11 @@ import { basename, dirname, isAbsolute, join } from 'node:path';
 import { stateRoot, sha256 } from './editor-runtime.mjs';
 import { ensureRuntime } from './runtime-install.mjs';
 import { post } from './transport.mjs';
-import { snapshotMatches, diskDocument } from './document-format.mjs';
+import { snapshotMatches, diskDocument, transportDocument } from './document-format.mjs';
 import { durableWrite } from './atomic-files.mjs';
 
 export function validateDocument(bytes) {
+  if (Buffer.byteLength(bytes) > MAX_DOCUMENT_BYTES) throw new Error('Document exceeds 256 MiB.');
   const document = JSON.parse(bytes.toString());
   if (!document || typeof document !== 'object' || Array.isArray(document) ||
       (!Array.isArray(document.children) && !Array.isArray(document.pages))) {
@@ -20,8 +23,8 @@ export function validateDocument(bytes) {
 export async function sourceBytes(path) {
   if (!isAbsolute(path) || !path.toLowerCase().endsWith('.op')) throw new Error('Use an absolute .op file path.');
   const stat = await lstat(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 32 * 1024 * 1024) {
-    throw new Error('The .op source must be a regular file smaller than 32 MiB.');
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_DOCUMENT_BYTES) {
+    throw new Error('The .op source must be a regular file smaller than 256 MiB.');
   }
   const bytes = await readFile(path);
   validateDocument(bytes);
@@ -29,7 +32,7 @@ export async function sourceBytes(path) {
 }
 
 export async function atomicSave(path, bytes, baseline) {
-  if (Buffer.byteLength(bytes) > 32 * 1024 * 1024) throw new Error('Saved document exceeds 32 MiB.');
+  if (Buffer.byteLength(bytes) > MAX_DOCUMENT_BYTES) throw new Error('Saved document exceeds 256 MiB.');
   validateDocument(bytes);
   const verify = async () => {
     if (baseline !== null && sha256(await sourceBytes(path)) !== baseline) {
@@ -100,12 +103,12 @@ export class EditorSession {
 
   async document() {
     this.assertLive();
-    const response = await fetch(`http://127.0.0.1:${this.port}/api/mcp/document`, { signal: AbortSignal.timeout(5_000) });
+    const response = await nativeDocumentHttp(this.port);
     if (!response.ok) throw new Error(`Canvas document read failed (${response.status}).`);
     const chunks = []; let size = 0;
     for await (const chunk of response.body) {
       size += chunk.length;
-      if (size > 32 * 1024 * 1024) throw new Error('Canvas document exceeds 32 MiB.');
+      if (size > DOCUMENT_ENVELOPE_BYTES) throw new Error('Canvas document exceeds 256 MiB.');
       chunks.push(chunk);
     }
     const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -152,7 +155,7 @@ export class EditorSession {
       throw Object.assign(new Error('The canvas changed while saving. Refresh and save again; no file was overwritten.'),
         { code: 'DOCUMENT_SNAPSHOT_STALE', writeAttempted: false, version: value.version });
     }
-    const bytes = Buffer.from(JSON.stringify(snapshot, null, 2) + '\n');
+    const bytes = Buffer.from(JSON.stringify(transportDocument(snapshot), null, 2) + '\n');
     const hash = await atomicSave(filePath, bytes, filePath === this.source ? this.baseline : null);
     this.source = filePath; this.baseline = hash;
     await this.checkpoint();

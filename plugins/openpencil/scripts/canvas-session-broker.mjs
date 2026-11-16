@@ -12,7 +12,7 @@ const MAX_RESPONSE_BYTES = 48 * 1024 * 1024;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const READ_TOOLS = new Set(['open_canvas', 'canvas_status', 'canvas_selection', 'canvas_documents',
   'canvas_comments', 'canvas_agents', 'canvas_codegen_poll', 'canvas_history', 'canvas_history_status', 'canvas_history', 'canvas_history_status', 'canvas_community_search', 'canvas_community_file']);
-const APP_TOOLS = new Set([...READ_TOOLS, 'canvas_native_request', 'canvas_document_open', 'canvas_document_import',
+const APP_TOOLS = new Set([...READ_TOOLS, 'canvas_transfer', 'canvas_native_request', 'canvas_document_open', 'canvas_document_import',
   'canvas_comment_create', 'canvas_comment_update', 'canvas_detach_source', 'canvas_checkpoint', 'canvas_save',
   'canvas_codegen_prepare', 'canvas_codegen_cancel', 'canvas_autosave', 'canvas_history_restore', 'canvas_autosave', 'canvas_history_restore', 'canvas_community_import', 'canvas_community_settings']);
 const fail = (code, message, uncertain = false) => Object.assign(new Error(message), { code, ...(uncertain && { uncertain: true }) });
@@ -26,13 +26,15 @@ export function validateCanvasSessionOperation(name, args = {}) {
     throw fail('SESSION_TOOL_DENIED', 'The App may only attach to the existing owner canvas. Use the project controls to switch documents.');
   }
   if (name === 'canvas_native_request') {
-    if (Object.keys(args).some(key => !['path', 'method', 'body'].includes(key)) ||
+    if (Object.keys(args).some(key => !['path', 'method', 'body', 'bodyToken'].includes(key)) ||
         (args.method !== undefined && !['GET', 'POST'].includes(args.method)) ||
-        (args.body !== undefined && typeof args.body !== 'string')) throw fail('SESSION_TOOL_DENIED', 'Invalid native canvas request.');
+        (args.body !== undefined && typeof args.body !== 'string') ||
+        (args.bodyToken !== undefined && typeof args.bodyToken !== 'string')) throw fail('SESSION_TOOL_DENIED', 'Invalid native canvas request.');
     try { nativeRoute(args.path, args.method || 'GET'); }
     catch { throw fail('SESSION_TOOL_DENIED', 'This native route is not available through the canvas App session.'); }
     return { mutation: args.method === 'POST' };
   }
+  if(name==='canvas_transfer')return {mutation:false};
   return { mutation: !READ_TOOLS.has(name) };
 }
 
@@ -170,7 +172,8 @@ export async function callCanvasSession(identity, name, args = {}) {
   if (descriptor.schemaVersion !== 1 || descriptor.projectRoot !== project || descriptor.sessionId !== identity.sessionId ||
       !Number.isInteger(descriptor.port) || descriptor.port < 1 || descriptor.port > 65535 ||
       typeof descriptor.token !== 'string' || !/^[a-zA-Z0-9_-]{43}$/.test(descriptor.token)) throw fail('INVALID_SESSION', 'Canvas session descriptor is invalid.');
-  const timeoutMs = identity.timeoutMs ?? 30_000;
+  const longOperation = ['open_canvas', 'canvas_document_open', 'canvas_document_import', 'canvas_community_import', 'canvas_autosave', 'canvas_save', 'canvas_history_restore'].includes(name) || name === 'canvas_native_request' && args.path === '/api/mcp/document';
+  const timeoutMs = identity.timeoutMs ?? (longOperation ? 120_000 : 30_000);
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120_000) throw fail('INVALID_SESSION_TIMEOUT', 'Canvas session timeout must be between 1 and 120000 milliseconds.');
   const body = JSON.stringify({ sessionId: identity.sessionId, name, arguments: args });
   if (Buffer.byteLength(body) > MAX_REQUEST_BYTES) throw fail('SESSION_MESSAGE_TOO_LARGE', 'Canvas session request exceeds its size limit.');

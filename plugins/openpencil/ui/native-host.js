@@ -4,11 +4,11 @@ const nativeBridge = (() => {
   let initialResult, initialError;
   const pending = new Map(), contextListeners = new Set(), resultWaiters = new Set();
   const post = message => window.parent.postMessage({ jsonrpc: '2.0', ...message }, '*');
-  function request(method, params = {}) {
+  function request(method, params = {}, timeout = 30000) {
     if (typeof OP_PREVIEW !== 'undefined') return Promise.reject(Error('Действие доступно в панели Codex'));
     const id = `openpencil-${++sequence}`;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { pending.delete(id); reject(Error('Codex не подтвердил действие. Проверьте результат перед повтором.')); }, 30000);
+      const timer = setTimeout(() => { pending.delete(id); reject(Error('Codex не подтвердил действие. Проверьте результат перед повтором.')); }, timeout);
       pending.set(id, { resolve, reject, timer });
       post({ id, method, params });
     });
@@ -54,11 +54,13 @@ const nativeBridge = (() => {
     });
   }
   async function call(name, args = {}) {
+    if (typeof nativeTransfer !== 'undefined') args = await nativeTransfer.prepare(call, name, args);
+    const longOperation = ['open_canvas', 'canvas_document_open', 'canvas_document_import', 'canvas_community_import', 'canvas_autosave', 'canvas_save', 'canvas_history_restore'].includes(name) || name === 'canvas_native_request' && args.path === '/api/mcp/document';
     const result = typeof OP_PREVIEW !== 'undefined'
       ? await (await previewFetch(OP_PREVIEW, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, arguments: args }) })).json()
       : await request('tools/call', sessionRef
         ? {name:'canvas_session_call',arguments:{...sessionRef,name,arguments:args}}
-        : {name,arguments:args});
+        : {name,arguments:args}, longOperation ? 120000 : 30000);
     if (result.isError) throw Object.assign(Error(result.content?.[0]?.text || 'Ошибка редактора'),
       { code: result.structuredContent?.code });
     return result;
@@ -67,7 +69,7 @@ const nativeBridge = (() => {
     async init() {
       if (initialized) return initialized;
       if (typeof OP_PREVIEW !== 'undefined') return { hostCapabilities: {}, hostContext: {} };
-      initialized = await request('ui/initialize', { appInfo: { name: 'OpenBrush', version: '0.8.0' },
+      initialized = await request('ui/initialize', { appInfo: { name: 'OpenBrush', version: '0.9.0' },
         appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' });
       capabilities = initialized.hostCapabilities || {};
       context = { ...initialized.hostContext, ...context };

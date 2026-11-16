@@ -1,19 +1,25 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, realpath, rename, rm } from 'node:fs/promises';
+import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join } from 'node:path';
 import { importCanvasImage } from './canvas-images.mjs';
 import { importProjectDocument } from './canvas-projects.mjs';
 import { liveDocument } from './document-format.mjs';
 import { fetchPublicBytes, publicHttpsUrl } from './community-network.mjs';
 import { communitySettings } from './community-settings.mjs';
+import { stateRoot } from './editor-runtime.mjs';
+import { privateDirectory, atomicBytes, safeBytes, withLibraryLock } from './library-storage.mjs';
+import { prepareLibraryAsset, inspectLibraryAsset, nativeResourceSummary } from './library-conversion.mjs';
 
-const LIMIT = 32 * 1024 * 1024;
+const LIMIT = 256 * 1024 * 1024;
+const DOCUMENT_LIMIT = 1024 * 1024 * 1024;
+const formatLimit = format => ['fig','op'].includes(format) ? DOCUMENT_LIMIT : LIMIT;
 const INDEX_LIMIT = 8 * 1024 * 1024;
 const FORMATS = new Set(['svg', 'png', 'jpg', 'jpeg', 'webp', 'fig', 'op']);
 const KINDS = ['icon', 'ui-kit', 'reference', 'document'];
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const string = { type: 'string' };
+const scope = {type:'string',enum:['global','project']};
 const metadata = { name: string, kind: { type:'string', enum:KINDS }, sourceUrl:string, communityUrl:string,
   coverUrl:string, coverPath:string, coverPageUrl:string, author:string, licenseSpdx:string, licenseUrl:string, licenseText:string, tags:{type:'array',items:string,maxItems:32} };
 const tool = (name, description, properties, required = [], readOnly = false, modelOnly = false) => ({
@@ -22,18 +28,20 @@ const tool = (name, description, properties, required = [], readOnly = false, mo
   ...(modelOnly && { _meta:{ui:{visibility:['model']}} }),
 });
 export const communityTools = [
-  tool('canvas_community_settings','Read or update project Community settings. License verification defaults to enabled; disabling permits unknown licenses under user responsibility, while retaining known attribution and licenses.',{verifyLicenses:{type:'boolean'}}),
-  tool('canvas_community_search','Search this project’s downloaded Community dataset. Returns provenance, license, checksums and safe local previews. For external discovery use the host web search and Figma Community URLs; this tool searches local files only.',
-    {query:string,kind:{type:'string',enum:KINDS},limit:{type:'integer',minimum:1,maximum:100},offset:{type:'integer',minimum:0},previews:{type:'boolean'}},[],true),
-  tool('canvas_community_ingest','Copy an authorized local SVG, image, .op or .fig into the project dataset with source and retained license. .fig can be opened by the native Figma importer from the library. No archive extraction or script execution.',
+  tool('canvas_community_settings','Read or update global resource defaults or project overrides. Autonomous resource selection defaults enabled. License verification defaults to enabled; disabling permits unknown licenses under user responsibility, while retaining known attribution and licenses.',{scope,verifyLicenses:{type:'boolean'},autonomous:{type:'boolean'}}),
+  tool('canvas_community_search','Search the global downloaded resource library by default, or scope to project-linked resources. Returns provenance, license, checksums and safe local previews. For external discovery use the host web search and Figma Community URLs; this tool searches local files only.',
+    {scope,query:string,kind:{type:'string',enum:KINDS},limit:{type:'integer',minimum:1,maximum:100},offset:{type:'integer',minimum:0},previews:{type:'boolean'}},[],true),
+  tool('canvas_community_ingest','Copy an authorized local SVG, image, .op or .fig into the global library and link it to this project with source and retained license. .fig automatically converts and indexes all pages through the verified native converter. No archive extraction or script execution.',
     {...metadata,sourcePath:string,licensePath:string},['sourcePath','kind','sourceUrl','author'],false,true),
-  tool('canvas_community_download','Download an authorized public HTTPS asset from its original source into the project dataset. Keeps source, any known license and original cover. License evidence is required when project license verification is enabled. No login, private URLs or access-control bypass.',
+  tool('canvas_community_download','Download an authorized public HTTPS asset from its original source into the global library and link it to this project. Keeps source, any known license and original cover. License evidence is required when project license verification is enabled. No login, private URLs or access-control bypass.',
     {...metadata,url:string,format:{type:'string',enum:[...FORMATS]},expectedSha256:string},['url','kind','sourceUrl','author'],false,true),
   tool('canvas_community_seed','Download the pinned Lucide essential icon pack with full upstream ISC/MIT license and verified official Community plugin URL. Adds local editable SVGs; does not edit the canvas.',
     {pack:{type:'string',enum:['lucide-essential']}},[],false,true),
+  tool('canvas_community_prepare','Convert an existing global .fig asset to a complete native .op resource using the verified bundled converter. Index every page and retain source fingerprint, converter version and warnings without opening the canvas.',{assetId:string},['assetId'],false,true),
+  tool('canvas_community_inspect','Inspect global native resource pages, node counts and searchable node names without opening a canvas. Pagination never truncates the stored resource.',{assetId:string,query:string,pageId:string,namesOffset:{type:'integer',minimum:0},namesLimit:{type:'integer',minimum:1,maximum:32},offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:100}},['assetId'],true,true),
   { ...tool('canvas_community_file','App-only: read a checksum-verified .fig asset from the current project dataset for the native Rust Figma importer. Binary bytes are returned only in private App metadata.',{assetId:string},['assetId'],true), _meta:{ui:{visibility:['app']}} },
-  tool('canvas_community_import','Use a checksum-verified dataset asset: SVG becomes editable native vectors; image embeds into an existing image node; .op creates a project document copy. .fig requires the native App importer. SVG/image require current page and version. Does not retry or save canvas changes.',
-    {assetId:string,expectedVersion:{type:'integer',minimum:0},pageId:string,nodeId:string,parentId:string,x:{type:'integer'},y:{type:'integer'}},['assetId']),
+  tool('canvas_community_import','Use a checksum-verified dataset asset: SVG becomes editable native vectors; image embeds into an existing image node; .op creates a project document copy. .fig is converted headlessly then copied as a separate native project document. SVG/image require current page and version. Does not retry or save canvas changes.',
+    {assetId:string,docJson:string,expectedVersion:{type:'integer',minimum:0},pageId:string,nodeId:string,parentId:string,x:{type:'integer'},y:{type:'integer'}},['assetId']),
 ];
 
 function text(value, label, max = 2048) {
@@ -45,7 +53,7 @@ function publicUrl(value, label = 'source URL') {
   if (url.protocol !== 'https:' || url.username || url.password || url.port) throw Error(`Use a public HTTPS ${label} without credentials or a port.`);
   return url.href;
 }
-async function bytesAt(path, limit = LIMIT) {
+async function bytesAt(path, limit = DOCUMENT_LIMIT) {
   if (!isAbsolute(path)) throw Error('Use an absolute local path.');
   const info = await lstat(path);
   if (!info.isFile() || info.isSymbolicLink() || info.size > limit || info.size === 0) throw Error('Use a nonempty regular file within the size limit; symlinks are not accepted.');
@@ -59,7 +67,7 @@ async function bytesAt(path, limit = LIMIT) {
   } finally { await handle.close(); }
 }
 function validateContent(bytes, format) {
-  if (!FORMATS.has(format) || !bytes.length || bytes.length > LIMIT) throw Error('Unsupported asset format or size.');
+  if (!FORMATS.has(format) || !bytes.length || bytes.length > formatLimit(format)) throw Error('Unsupported asset format or size.');
   if (format === 'svg') {
     const svg = bytes.toString('utf8');
     // Keep native vectors self-contained. Reject active XML/CSS and all resource references.
@@ -99,7 +107,7 @@ function validateCover(bytes,format) {
 }
 const importMode = format => format === 'svg' ? 'vector' : format === 'op' ? 'document' : format === 'fig' ? 'figma' : 'image';
 
-export class CommunityDataset {
+export class ProjectCommunityDataset {
   constructor(projectRoot, { fetchImpl, lookupImpl } = {}) { this.projectRoot = projectRoot; this.network = {fetchImpl,lookupImpl}; this.coverCache=new Map(); this.directory = join(projectRoot,'.openpencil','community'); }
   async ensure() {
     if (!isAbsolute(this.projectRoot) || await realpath(this.projectRoot) !== this.projectRoot) throw Error('Use the canonical bound project directory.');
@@ -142,11 +150,11 @@ export class CommunityDataset {
   }
   async settings(changes = {}) { await this.ensure(); return communitySettings(this.directory,changes); }
   describe(entry) { return {...entry,path:join(this.directory,entry.relativePath),importMode:importMode(entry.format)}; }
-  async search({query='',kind,limit=32,offset=0,previews=true} = {}) {
+  async search({query='',kind,limit=32,offset=0,previews=true,assetIds,additionalMatches} = {}) {
     if (typeof query !== 'string' || query.length > 512 || (kind && !KINDS.includes(kind)) || !Number.isInteger(limit) || limit<1 || limit>100 || !Number.isInteger(offset) || offset<0) throw Error('Invalid dataset search parameters.');
     const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-    const matches = (await this.index()).assets.filter(entry => (!kind || entry.kind === kind) && terms.every(term =>
-      [entry.name,entry.author,entry.kind,entry.format,...entry.tags].join(' ').toLowerCase().includes(term)));
+    const matches = (await this.index()).assets.filter(entry => (!assetIds || assetIds.has(entry.id)) && (!kind || entry.kind === kind) && terms.every(term =>
+      [entry.name,entry.author,entry.kind,entry.format,...entry.tags,...(additionalMatches?.get(entry.id) || [])].join(' ').toLowerCase().includes(term)));
     const assets = [];
     for (const entry of matches.slice(offset,offset+limit)) {
       const result = this.describe(entry);
@@ -171,7 +179,7 @@ export class CommunityDataset {
   }
   async ingest(args, suppliedBytes) {
     const format = (args.format || extname(args.sourcePath || new URL(args.url).pathname).slice(1)).toLowerCase();
-    const bytes = suppliedBytes || await bytesAt(args.sourcePath);
+    const bytes = suppliedBytes || await bytesAt(args.sourcePath,formatLimit(format));
     validateContent(bytes,format);
     if (args.expectedSha256 && hash(bytes) !== args.expectedSha256) throw Error('Downloaded asset checksum does not match expectedSha256.');
     const licenseBytes = args.licensePath ? await bytesAt(args.licensePath,256*1024) : args.licenseText ? Buffer.from(text(args.licenseText,'license text',256*1024)) : null;
@@ -182,7 +190,8 @@ export class CommunityDataset {
     if (!KINDS.includes(args.kind)) throw Error('Invalid asset kind.');
     const digest = hash(bytes), licenseHash = licenseBytes ? hash(licenseBytes) : null;
     const entry = { id:hash(`${digest}:${args.sourceUrl}`).slice(0,24), name:text(args.name || basename(args.sourcePath || new URL(args.url).pathname),'name',200),
-      kind:args.kind,format,sourceUrl:publicUrl(args.sourceUrl),communityUrl:args.communityUrl ? publicUrl(args.communityUrl,'Community URL') : null,
+      kind:args.kind,format,...(args.downloadUrl && {downloadUrl:publicUrl(args.downloadUrl,'download URL')}),sourceUrl:publicUrl(args.sourceUrl),communityUrl:args.communityUrl ? publicUrl(args.communityUrl,'Community URL') : null,
+      ...(args.downloadUrl && {download:{url:publicUrl(args.downloadUrl,'download URL'),requestedUrl:publicUrl(args.url,'requested download URL'),downloadedAt:new Date().toISOString()}}),
       author:text(args.author,'author',200),license:{status:knownLicense?'recorded':'unknown',responsibility:knownLicense?'license':'user',
         spdx:args.licenseSpdx ? text(args.licenseSpdx,'license identifier',100) : null,url:args.licenseUrl ? publicUrl(args.licenseUrl,'license URL') : null,
         textPath:licenseHash?`licenses/${licenseHash}.txt`:null,sha256:licenseHash},sha256:digest,bytes:bytes.length,relativePath:`assets/${digest}.${format}`,
@@ -190,33 +199,28 @@ export class CommunityDataset {
       tags:(args.tags || []).slice(0,32).map(tag=>text(tag,'tag',80)),createdAt:new Date().toISOString() };
     if (entry.communityUrl && !/^https:\/\/www\.figma\.com\/community\/(?:file|plugin)\/\d+(?:\/|$)/.test(entry.communityUrl)) throw Error('Use an actual Figma Community file or plugin URL.');
     await this.ensure();
-    const lockPath = join(this.directory,'.write-lock');
-    let lock; try { lock = await open(lockPath,'wx',0o600); } catch (error) {
-      if (error.code === 'EEXIST') throw Error('Another dataset writer is active. Inspect its result before retrying.'); throw error;
-    }
-    const temp = join(this.directory,`index.${randomUUID()}.tmp`);
-    try {
+    return withLibraryLock(this.directory,async()=>{
       const index = await this.index();
       const existing = index.assets.find(asset=>asset.id === entry.id);
       if (existing) {
         await this.verified(existing,{licensePolicy:false});
         if(!entry.cover && existing.cover) entry.cover=existing.cover;
+        if(existing.native) entry.native=existing.native;
         // The bytes are immutable; a second explicit ingestion can refresh attribution and search tags.
         entry.createdAt=existing.createdAt;
         index.assets=index.assets.filter(asset=>asset.id!==entry.id);
       }
       for (const [path,data] of [[entry.relativePath,bytes],...(licenseBytes?[[entry.license.textPath,licenseBytes]]:[]),...(cover?[[cover.metadata.relativePath,cover.bytes]]:[])]) {
         const target = join(this.directory,path);
-        try { const file = await open(target,'wx',0o600); try { await file.writeFile(data); } finally { await file.close(); } }
-        catch (error) { if (error.code !== 'EEXIST') throw error; if (hash(await bytesAt(target)) !== hash(data)) throw Error('Existing dataset object checksum mismatch.'); }
+        try { if (hash(await bytesAt(target)) !== hash(data)) throw Error('Existing dataset object checksum mismatch.'); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; await atomicBytes(target,data); }
       }
       index.assets.push(entry);
       const serialized = JSON.stringify(index,null,2)+'\n';
       if (Buffer.byteLength(serialized) > INDEX_LIMIT) throw Error('Dataset index exceeds its size limit.');
-      const file = await open(temp,'wx',0o600); try { await file.writeFile(serialized); await file.sync(); } finally { await file.close(); }
-      await rename(temp,join(this.directory,'index.json'));
+      await atomicBytes(join(this.directory,'index.json'),serialized);
       return {...this.describe(entry),duplicate:!!existing};
-    } finally { await rm(temp,{force:true}); await lock.close(); await rm(lockPath,{force:true}); }
+    });
   }
   async fetchBytes(url, limit = LIMIT) {
     return (await fetchPublicBytes(url,{...this.network,limit})).bytes;
@@ -262,13 +266,15 @@ export class CommunityDataset {
       method,sha256,bytes:bytes.length,format,relativePath:`covers/${sha256}.${format}`,downloadedAt:new Date().toISOString()}};
   }
   async download(args) {
-    const bytes = await this.fetchBytes(args.url);
+    const format=(args.format || extname(new URL(args.url).pathname).slice(1)).toLowerCase();
+    const downloaded = await fetchPublicBytes(args.url,{...this.network,limit:formatLimit(format),timeoutMs:120000});
+    const bytes=downloaded.bytes;
     let licenseText=args.licenseText;
     if(!licenseText && args.licenseUrl) {
       try { licenseText=(await this.fetchBytes(args.licenseUrl,256*1024)).toString('utf8'); }
       catch(error) { if((await this.settings()).verifyLicenses) throw error; }
     }
-    return this.ingest({...args,licenseText},bytes);
+    return this.ingest({...args,format,licenseText,downloadUrl:downloaded.url},bytes);
   }
   async seed() {
     const revision='55782beff3a0133df79c417eb68f96e8f19e2404';
@@ -290,18 +296,128 @@ export class CommunityDataset {
   }
 }
 
+// Originals and attribution are global; project indexes contain references only.
+export class CommunityDataset extends ProjectCommunityDataset {
+  constructor(projectRoot, options = {}) {
+    super(projectRoot,options);
+    this.local = new ProjectCommunityDataset(projectRoot,options);
+    this.directory = options.libraryRoot || join(stateRoot(),'library');
+    this.migration = null;
+  }
+  async ensure() {
+    if (!isAbsolute(this.projectRoot) || await realpath(this.projectRoot) !== this.projectRoot) throw Error('Use the canonical bound project directory.');
+    await privateDirectory(this.directory);
+    for (const name of ['assets','licenses','covers','native']) await privateDirectory(join(this.directory,name));
+  }
+  async settings(changes = {}) {
+    const {scope: requestedScope='project',...update}=changes;
+    if (!['global','project'].includes(requestedScope)) throw Error('Invalid library scope.');
+    await this.ensure();
+    const global = await communitySettings(this.directory);
+    if (requestedScope === 'global') return communitySettings(this.directory,update);
+    await this.local.ensure();
+    return communitySettings(this.local.directory,update,global);
+  }
+  async migrate() {
+    if (!this.migration) this.migration = this.migrateProject().catch(error=>{this.migration=null;throw error;});
+    return this.migration;
+  }
+  async migrateProject() {
+    const legacy = await this.local.index();
+    if (!legacy.assets.length) return;
+    await this.ensure();
+    await withLibraryLock(this.directory,async()=>{
+      const index=await super.index(); let changed=false;
+      for (const entry of legacy.assets) {
+        await this.local.verified(entry,{licensePolicy:false});
+        for (const object of [{relativePath:entry.relativePath,sha256:entry.sha256,limit:DOCUMENT_LIMIT},
+          ...(entry.license.textPath?[{relativePath:entry.license.textPath,sha256:entry.license.sha256,limit:256*1024}]:[]),
+          ...(entry.cover?[{...entry.cover,limit:4*1024*1024}]:[])]) {
+          const bytes=await safeBytes(join(this.local.directory,object.relativePath),object.limit);
+          if(hash(bytes)!==object.sha256) throw Error('Legacy library object checksum changed.');
+          await this.storeObject(object.relativePath,bytes);
+        }
+        if(!index.assets.some(asset=>asset.id===entry.id)) {index.assets.push(entry);changed=true;}
+      }
+      if(changed) await atomicBytes(join(this.directory,'index.json'),JSON.stringify(index,null,2)+'\n');
+    });
+    for(const entry of legacy.assets) await this.reference(entry.id,{migrated:true});
+  }
+  async storeObject(relativePath,bytes) {
+    const path=join(this.directory,relativePath);
+    try { if(hash(await safeBytes(path,DOCUMENT_LIMIT))!==hash(bytes)) throw Error('Existing library object checksum mismatch.'); }
+    catch(error) {if(error.code!=='ENOENT') throw error;await atomicBytes(path,bytes);}
+  }
+  async reference(assetId,metadata={}) {
+    await this.local.ensure();
+    return withLibraryLock(this.local.directory,async()=>{
+      const path=join(this.local.directory,'references.json');
+      let index={schemaVersion:1,assets:[]};
+      try {index=JSON.parse(await safeBytes(path,INDEX_LIMIT));} catch(error) {if(error.code!=='ENOENT') throw error;}
+      if(index.schemaVersion!==1 || !Array.isArray(index.assets) || index.assets.some(item=>!/^[a-f0-9]{24}$/.test(item.assetId))) throw Error('Invalid project library references.');
+      if(!index.assets.some(entry=>entry.assetId===assetId)) {
+        index.assets.push({assetId,...metadata,linkedAt:new Date().toISOString()});
+        await atomicBytes(path,JSON.stringify(index,null,2)+'\n');
+      }
+      return index;
+    },'.references-lock');
+  }
+  async search(args={}) {
+    const {scope: requestedScope='global',...query}=args;
+    if(!['global','project'].includes(requestedScope)) throw Error('Invalid library scope.');
+    await this.migrate();
+    const additionalMatches=new Map();
+    if(query.query) for(const entry of (await this.index()).assets) {
+      if(!entry.native?.relativePath || !/^native\/[a-f0-9]{64}\.index\.json$/.test(entry.native.relativePath)) continue;
+      try {
+        const native=JSON.parse(await safeBytes(join(this.directory,entry.native.relativePath),64*1024*1024));
+        if(native.sourceSha256===entry.sha256 && Array.isArray(native.pages)) additionalMatches.set(entry.id,native.pages.flatMap(page=>[page.name,...(page.names || [])]));
+      } catch { /* Source search remains available when a derived index is damaged. */ }
+    }
+    if(requestedScope==='global') return {...await super.search({...query,additionalMatches}),scope:'global'};
+    let refs={assets:[]};
+    try {refs=JSON.parse(await safeBytes(join(this.local.directory,'references.json'),INDEX_LIMIT));} catch(error) {if(error.code!=='ENOENT') throw error;}
+    const ids=new Set(refs.assets.map(item=>item.assetId));
+    return {...await super.search({...query,assetIds:ids,additionalMatches}),scope:'project'};
+  }
+  async ingest(args,bytes) {
+    await this.migrate();
+    const result=await super.ingest(args,bytes);
+    await this.reference(result.id);
+    let conversion;
+    if(['fig','op'].includes(result.format)) {try {const resource=await this.prepare(result.id);conversion=nativeResourceSummary(resource);} catch(error) {conversion={ready:false,error:error.message};}}
+    return {...result,scope:'global',...(conversion && {conversion})};
+  }
+  async get(id) {await this.migrate();return super.get(id);}
+  async recordNative(assetId,native) {
+    return withLibraryLock(this.directory,async()=>{
+      const index=await this.index();
+      const entry=index.assets.find(item=>item.id===assetId);
+      if(!entry) throw Error('Native source disappeared from the global library.');
+      if(JSON.stringify(entry.native)===JSON.stringify(native)) return;
+      entry.native=native;
+      await atomicBytes(join(this.directory,'index.json'),JSON.stringify(index,null,2)+'\n');
+    });
+  }
+  async prepare(assetId,options) {await this.migrate();return prepareLibraryAsset(this,assetId,options);}
+  async inspect(args) {await this.migrate();return inspectLibraryAsset(this,args);}
+}
+
 export async function dispatchCommunityTool(controller,name,args={}) {
   if (!controller.project?.projectRoot) throw Error('Open this project’s managed canvas first.');
-  const dataset = new CommunityDataset(controller.project.projectRoot);
+  const dataset = new CommunityDataset(controller.project.projectRoot,controller.options?.community || {});
   if (name === 'canvas_community_settings') return dataset.settings(args);
   if (name === 'canvas_community_search') return dataset.search(args);
   if (name === 'canvas_community_ingest') return dataset.ingest(args);
   if (name === 'canvas_community_download') return dataset.download(args);
+  if (name === 'canvas_community_prepare') return nativeResourceSummary(await dataset.prepare(args.assetId),{includePages:true});
+  if (name === 'canvas_community_inspect') return dataset.inspect(args);
   if (name === 'canvas_community_seed') return dataset.seed();
   if (name !== 'canvas_community_import') throw Error('Unknown Community operation.');
-  const {entry,bytes} = await dataset.get(args.assetId);
-  if (entry.importMode === 'figma') return {asset:entry,imported:false,requiresNativeImport:true,reason:'Open this asset from the library to run the native Rust Figma importer. Inspect conversion warnings and save the resulting .op document.'};
-  if (entry.importMode === 'document') return {asset:entry,...await importProjectDocument(controller,{sourcePath:entry.path})};
+  let {entry,bytes} = await dataset.get(args.assetId);
+  await dataset.reference(entry.id);
+  if(entry.format==='fig') {const converted=await dataset.prepare(entry.id);return {asset:entry,...await importProjectDocument(controller,resourceImportArguments(controller,entry,converted.path,args.docJson)),conversion:nativeResourceSummary(converted)};}
+  if (entry.importMode === 'document') return {asset:entry,...await importProjectDocument(controller,resourceImportArguments(controller,entry,entry.path,args.docJson))};
   if (entry.importMode === 'image') {
     rejectLeasedTarget(controller,args.nodeId);
     const imported=await importCanvasImage(controller.session,{...args,filePath:entry.path});
@@ -325,6 +441,11 @@ export async function dispatchCommunityTool(controller,name,args={}) {
   return {asset:entry,imported:true,editable:true,version:after.version,saved:false};
 }
 
+function resourceImportArguments(controller,entry,path,docJson) {
+  const stem=entry.name.replace(/[\/\\\u0000-\u001f]/g,'-').replace(/\.(fig|op)$/i,'').replace(/^\.+/,'').slice(0,120) || 'Resource';
+  return {sourcePath:path,filePath:join(controller.project.projectRoot,`${stem}-${randomUUID().slice(0,8)}.op`),name:entry.name,...(docJson!==undefined && {docJson})};
+}
+
 function rejectLeasedTarget(controller,targetId) {
   // Ownership remains with the assigned agents until their work is released.
   if (targetId && controller.agents?.status().agents?.length) throw Error('Release active agent assignments before importing into existing nodes.');
@@ -332,7 +453,7 @@ function rejectLeasedTarget(controller,targetId) {
 
 export async function communityAssetFile(controller,{assetId}={}) {
   if (!controller.project?.projectRoot) throw Error('Open this project’s managed canvas first.');
-  const {entry,bytes}=await new CommunityDataset(controller.project.projectRoot).get(assetId);
+  const {entry,bytes}=await new CommunityDataset(controller.project.projectRoot,controller.options?.community || {}).get(assetId);
   if (entry.format !== 'fig') throw Error('This App transport accepts only a Figma .fig dataset asset.');
   const name=entry.name.replace(/[\/\\\u0000-\u001f]/g,'-').replace(/\.fig$/i,'')+'.fig';
   const value={assetId:entry.id,name,format:'fig',bytes:bytes.length,sha256:entry.sha256};

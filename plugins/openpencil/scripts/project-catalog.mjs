@@ -1,3 +1,4 @@
+import { MAX_DOCUMENT_BYTES, DOCUMENT_ENVELOPE_BYTES } from './document-limits.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, rm } from 'node:fs/promises';
@@ -7,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import { durableWrite } from './atomic-files.mjs';
 
 const DIRECTORY = '.openpencil';
-const MAX_DOCUMENT_BYTES = 32 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HASH = /^[0-9a-f]{64}$/;
@@ -89,7 +89,7 @@ async function regularBytes(path, limit = MAX_DOCUMENT_BYTES) {
 
 function documentBytes(value) {
   const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value);
-  if (bytes.length > MAX_DOCUMENT_BYTES) fail('INVALID_DOCUMENT', 'Размер документа OpenPencil не должен превышать 32 МиБ.');
+  if (bytes.length > MAX_DOCUMENT_BYTES) fail('INVALID_DOCUMENT', 'Размер документа OpenPencil не должен превышать 256 МиБ.');
   let document;
   try { document = JSON.parse(bytes.toString('utf8')); }
   catch { fail('INVALID_DOCUMENT', 'Документ OpenPencil содержит некорректный JSON.'); }

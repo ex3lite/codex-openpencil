@@ -12,14 +12,14 @@ async function fixture(t,options) {
   const root=await realpath(await mkdtemp(join(tmpdir(),'community-dataset-')));
   t.after(()=>rm(root,{recursive:true,force:true}));
   const sourcePath=join(root,'source.svg'); await writeFile(sourcePath,svg);
-  return {root,sourcePath,dataset:new CommunityDataset(root,options)};
+  return {root,sourcePath,dataset:new CommunityDataset(root,{libraryRoot:join(root,'library'),...options})};
 }
 test('ingest retains bytes, license and provenance; search and repeated ingestion are deterministic', async t=>{
   const {root,sourcePath,dataset}=await fixture(t);
   const result=await dataset.ingest({...metadata,sourcePath});
   assert.equal(result.duplicate,false); assert.equal(await readFile(result.path,'utf8'),svg);
-  const index=JSON.parse(await readFile(join(root,'.openpencil/community/index.json')));
-  assert.equal(await readFile(join(root,'.openpencil/community',index.assets[0].license.textPath),'utf8'),license);
+  const index=JSON.parse(await readFile(join(root,'library/index.json')));
+  assert.equal(await readFile(join(root,'library',index.assets[0].license.textPath),'utf8'),license);
   assert.equal((await dataset.ingest({...metadata,sourcePath})).duplicate,true);
   const found=await dataset.search({query:'поиск'});
   assert.equal(found.total,1); assert.equal(found.assets[0].available,true); assert.equal(found.assets[0].importMode,'vector');
@@ -61,14 +61,14 @@ test('SVG import guards page, version and parent then makes one native edit; .fi
   const {root,sourcePath,dataset}=await fixture(t);
   const entry=await dataset.ingest({...metadata,sourcePath});
   let version=7; const calls=[]; let saves=0;
-  const controller={project:{projectRoot:root},persistence:{changed:()=>saves++},session:{document:async()=>({version,activePageIndex:0,document:{pages:[{id:'p',children:[{id:'f',type:'frame',children:[]}]}]}}),forward:async msg=>{calls.push(msg);version++;return {result:{content:[]}};}}};
+  const controller={project:{projectRoot:root},options:{community:{libraryRoot:join(root,'library')}},persistence:{changed:()=>saves++},session:{document:async()=>({version,activePageIndex:0,document:{pages:[{id:'p',children:[{id:'f',type:'frame',children:[]}]}]}}),forward:async msg=>{calls.push(msg);version++;return {result:{content:[]}};}}};
   await assert.rejects(dispatchCommunityTool(controller,'canvas_community_import',{assetId:entry.id,pageId:'p',expectedVersion:6}),/version/);
   const imported=await dispatchCommunityTool(controller,'canvas_community_import',{assetId:entry.id,pageId:'p',parentId:'f',expectedVersion:7});
   assert.equal(imported.editable,true); assert.equal(calls.length,1); assert.equal(calls[0].params.name,'import_svg'); assert.equal(saves,1);
   const figPath=join(root,'test.fig');await writeFile(figPath,'fig-kiwi-fixture');
   const fig=await dataset.ingest({...metadata,kind:'reference',sourcePath:figPath});
-  const retained=await dispatchCommunityTool(controller,'canvas_community_import',{assetId:fig.id});
-  assert.equal(retained.imported,false); assert.equal(retained.requiresNativeImport,true); assert.equal(calls.length,1);
+  await assert.rejects(dispatchCommunityTool(controller,'canvas_community_import',{assetId:fig.id}),/runtime|conversion|converter|import|Configure/);
+  assert.equal(calls.length,1);
 });
 test('model file-reading and network tools are not exposed to app UI',()=>{
   for(const name of ['canvas_community_ingest','canvas_community_download','canvas_community_seed']) assert.deepEqual(communityTools.find(tool=>tool.name===name)._meta.ui.visibility,['model']);
@@ -77,7 +77,7 @@ test('model file-reading and network tools are not exposed to app UI',()=>{
 test('App Figma transport verifies bytes and keeps binary payload out of model text',async t=>{
   const {root,sourcePath,dataset}=await fixture(t);
   const svgAsset=await dataset.ingest({...metadata,sourcePath});
-  const controller={project:{projectRoot:root}};
+  const controller={project:{projectRoot:root},options:{community:{libraryRoot:join(root,'library')}}};
   await assert.rejects(communityAssetFile(controller,{assetId:svgAsset.id}),/only a Figma/);
   const figPath=join(root,'kit.fig'),binary=Buffer.from('fig-kiwi-binary-fixture');
   await writeFile(figPath,binary);
@@ -96,13 +96,13 @@ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
 test('license verification defaults on; explicit project opt-out retains unknown status and known evidence',async t=>{
  const {dataset,sourcePath}=await fixture(t);
  const unknown={...metadata,sourcePath,licenseText:undefined,licenseSpdx:undefined};
- assert.deepEqual(await dataset.settings(),{verifyLicenses:true});
+ assert.deepEqual(await dataset.settings(),{verifyLicenses:true,autonomous:true});
  await assert.rejects(dataset.ingest(unknown),/License verification/);
  await dataset.settings({verifyLicenses:false});
  const entry=await dataset.ingest(unknown);
  assert.equal(entry.license.status,'unknown');assert.equal(entry.license.responsibility,'user');assert.equal(entry.license.spdx,null);
  assert.equal((await dataset.get(entry.id)).entry.id,entry.id);
- await dataset.settings({verifyLicenses:true});
+ await dataset.settings({verifyLicenses:true,autonomous:true});
  assert.equal((await dataset.search()).assets[0].available,false);
  const upgraded=await dataset.ingest({...metadata,sourcePath});assert.equal(upgraded.license.status,'recorded');
  await dataset.settings({verifyLicenses:false});
@@ -117,7 +117,7 @@ test('original Community og:image cover is stored with provenance and checksum i
  const entry=await dataset.ingest({...metadata,sourcePath,communityUrl:'https://www.figma.com/community/file/123/example'});
  assert.equal(entry.cover.method,'page-og-image');assert.equal(entry.cover.sourceUrl,'https://images.example/cover.png?a=1&b=2');
  assert.equal(entry.cover.pageUrl,entry.communityUrl);assert.equal(requests.length,2);
- const stored=join(root,'.openpencil/community',entry.cover.relativePath);
+ const stored=join(root,'library',entry.cover.relativePath);
  assert.deepEqual(await readFile(stored),png);
  const found=(await dataset.search()).assets[0];assert.match(found.coverDataUrl,/^data:image\/png;base64,/);assert.match(found.previewDataUrl,/^data:image\/svg/);
  await writeFile(stored,'changed');
@@ -127,7 +127,7 @@ test('supplied original cover keeps exact bytes; local cover requires original s
  const {dataset,sourcePath,root}=await fixture(t);const coverPath=join(root,'cover.png');await writeFile(coverPath,png);
  await assert.rejects(dataset.ingest({...metadata,sourcePath,coverPath}),/coverUrl/);
  const entry=await dataset.ingest({...metadata,sourcePath,coverPath,coverUrl:'https://images.example/original.png'});
- assert.equal(entry.cover.method,'supplied-source');assert.deepEqual(await readFile(join(root,'.openpencil/community',entry.cover.relativePath)),png);
+ assert.equal(entry.cover.method,'supplied-source');assert.deepEqual(await readFile(join(root,'library',entry.cover.relativePath)),png);
 });
 test('original AVIF covers retain exact bytes, validate ftyp brands and never become asset formats',async t=>{
  const {dataset,sourcePath,root}=await fixture(t);const coverPath=join(root,'original.avif');
@@ -135,7 +135,7 @@ test('original AVIF covers retain exact bytes, validate ftyp brands and never be
  for(const [major,compatible] of [['avif','mif1'],['avis','mif1'],['mif1','avif']]) {
   const bytes=ftyp(major,compatible);await writeFile(coverPath,bytes);
   const entry=await dataset.ingest({...metadata,sourcePath,coverPath,coverUrl:'https://images.example/original.avif'});
-  assert.equal(entry.cover.format,'avif');assert.deepEqual(await readFile(join(root,'.openpencil/community',entry.cover.relativePath)),bytes);
+  assert.equal(entry.cover.format,'avif');assert.deepEqual(await readFile(join(root,'library',entry.cover.relativePath)),bytes);
   const found=(await dataset.search()).assets[0];assert.equal(found.coverDataUrl,`data:image/avif;base64,${bytes.toString('base64')}`);
  }
  for(const bytes of [ftyp('heic','mif1'),Buffer.from('not AVIF despite avif text'),(()=>{const bytes=ftyp('avif');bytes.writeUInt32BE(4096,0);return bytes;})()]) {

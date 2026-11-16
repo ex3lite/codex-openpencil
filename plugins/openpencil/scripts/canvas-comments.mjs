@@ -1,7 +1,7 @@
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { readCanvasSelection, sameSelection } from './canvas-selection.mjs';
+import { sameSelection } from './canvas-selection.mjs';
 import { snapshotMatches } from './document-format.mjs';
 
 // Comments capture a fixed target. A later selection never retargets feedback.
@@ -31,11 +31,20 @@ export class CanvasComments {
       return existing;
     }
     if (comments.length >= 500) throw Error('В документе уже 500 комментариев.');
-    const { live, selection } = await readCanvasSelection(this.session, { fresh: true });
-    if (!nodeIds?.length || nodeIds.length > 100 || !sameSelection(selection, { pageId, nodeIds })) throw Error('Выделение изменилось. Выберите элементы заново.');
+    const live=await this.session.document();
+    if(!Array.isArray(nodeIds)||!nodeIds.length||nodeIds.length>100||nodeIds.some(id=>typeof id!=='string')||new Set(nodeIds).size!==nodeIds.length)throw Error('Некорректная цель комментария.');
+    const pages=live.document.pages;
+    const page=pages?.length?pages.find(page=>page.id===pageId):pageId==='0'?live.document:null;
+    if(!page)throw Error('Страница закреплённого элемента больше не существует.');
+    const index=new Map(),stack=[{children:page.children||[],parentId:null}];
+    while(stack.length){const {children,parentId}=stack.pop();for(const node of children){
+      index.set(node.id,{id:node.id,name:node.name||node.type,type:node.type,parentId});
+      if(node.children?.length)stack.push({children:node.children,parentId:node.id});
+    }}
+    if(nodeIds.some(id=>!index.has(id)))throw Error('Закреплённый слой больше не существует.');
     if (live.version !== expectedVersion || !snapshotMatches(JSON.parse(docJson), live)) throw Error('Макет изменился. Обновите цель комментария перед отправкой.');
     const comment = { id: requestId, ...this.identity, version: live.version, pageId, nodeIds: [...nodeIds],
-      nodes: selection.nodes, text: text.trim(), status: 'draft', createdAt: new Date().toISOString() };
+      nodes: nodeIds.map(id=>index.get(id)), text: text.trim(), status: 'draft', createdAt: new Date().toISOString() };
     comments.push(comment); await this.persist(comments); return comment;
   }
   async update({ commentId, status }) {

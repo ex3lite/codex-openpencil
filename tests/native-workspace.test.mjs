@@ -17,7 +17,7 @@ function fixture() {
   const sandbox=vm.createContext({document:{getElementById:el,createElement:make,body:{dataset:{}},querySelectorAll:()=>[],addEventListener(name,fn){handlers.set(name,fn);}},
     nativeUI:{openPanel(){},closePanel(){closed?.();},onClose(fn){closed=fn;},button(text,action,cls){const c=make('button');c.textContent=text;c.className=cls;c.onclick=action;return c;}},
     window:{dispatchEvent(){}},Event:class{},nativeBridge:{context:{},capabilities:{updateModelContext:{},message:{text:{}}},onContext(){}},
-    crypto:{randomUUID:()=> 'request'},nativeEditor:{ready:false,onEvent(fn){editorEvent=fn;},send(message){sent.push(message);},async flush(){return {docJson:'{}'};},status(message){throw Error(message);},async call(name){calls.push(name);return current;}}});
+    crypto:{randomUUID:()=> 'request'},nativeEditor:{ready:false,onEvent(fn){editorEvent=fn;},send(message){sent.push(message);},async flush(){calls.push('snapshot_flush');return {docJson:'{}'};},async captureSelection(){calls.push('capture_selection');return current;},status(message){throw Error(message);},async call(name){calls.push(name);return name==='canvas_comments'?current.comments||[]:current;}}});
   vm.runInContext(helper+'\n'+source+';globalThis.workspace=nativeWorkspace;',sandbox);
   const workspace=sandbox.workspace;
   workspace.onContextChange(()=>payloads.push(JSON.stringify(workspace.contextData())),()=>{});
@@ -30,7 +30,7 @@ test('context drawer adds/removes explicit targets, previews the exact payload a
   assert.equal(f.el('context-add').disabled,false);
   assert.equal(JSON.parse(f.el('context-details').textContent).attachments.length,0);
   await f.el('context-add').onclick();
-  assert.deepEqual(f.calls,['canvas_status']);
+  assert.deepEqual(f.calls,['capture_selection']);
   assert.equal(f.payloads.length,1);
   assert.deepEqual(JSON.parse(f.el('context-details').textContent),JSON.parse(f.payloads[0]));
   assert.equal(f.el('workspace-context').textContent,'Контекст · 1');
@@ -43,7 +43,7 @@ test('context drawer adds/removes explicit targets, previews the exact payload a
   assert.equal(f.payloads.length,2);
   assert.equal(JSON.parse(f.payloads[1]).attachments.length,0);
   assert.equal(f.el('workspace-context').textContent,'Контекст · 0');
-  assert.deepEqual(f.calls,['canvas_status']);
+  assert.deepEqual(f.calls,['capture_selection']);
 });
 
 test('a comment draft keeps its captured target after Escape and another selection',async()=>{
@@ -65,4 +65,35 @@ test('Escape in the host toolbar exits preview but an open drawer owns Escape',(
   assert.equal(event.prevented,true);
   f.el('workspace-context').onclick();f.handlers.get('keydown')(event);
   assert.equal(f.sent.length,1);
+});
+
+test('direct attach button pins selection once and does not follow later clicks',async()=>{
+  const f=fixture();assert.equal(f.el('workspace-attach').disabled,false);
+  await f.el('workspace-attach').onclick();assert.equal(f.payloads.length,1);
+  assert.equal(JSON.parse(f.payloads[0]).attachments[0].nodeIds[0],'n1');
+  f.workspace.update({...f.current,selection:{count:0,nodeIds:[],nodes:[],pageId:'page'}});
+  assert.equal(f.el('workspace-attach').disabled,true);assert.equal(f.payloads.length,1);
+});
+test('independent panel acknowledgements expose accurate labels and inspector close',()=>{
+  const f=fixture();f.event({type:'op-shell/panels-state',layers:false,inspector:true,inspectorVisible:true});
+  assert.equal(f.el('workspace-sidebar').textContent,'Показать слои');
+  assert.equal(f.el('workspace-inspector-close').hidden,false);
+  f.el('workspace-inspector-close').onclick();assert.equal(f.sent[0].type,'op-bridge/toggle-inspector');
+  f.event({type:'op-shell/panels-state',layers:false,inspector:false,inspectorVisible:false});
+  assert.equal(f.el('workspace-inspector').textContent,'Показать свойства');assert.equal(f.el('workspace-inspector-close').hidden,true);
+});
+
+test('an agent resolving a comment refreshes the open comments drawer',async()=>{
+  const f=fixture();await f.el('workspace-comments').onclick();
+  const comment={id:'comment',nodes:[{name:'Button'}],nodeIds:['n1'],version:1,text:'Check',status:'resolved'};
+  f.workspace.update({...f.current,comments:[comment]});
+  const text=[];function walk(n){text.push(n.textContent);for(const c of n.children||[])walk(c);}walk(f.el('workspace-drawer'));
+  assert.ok(text.some(t=>t.includes('Выполнен')));
+  assert.equal(f.calls.filter(n=>n==='canvas_comments').length,1);
+});
+
+test('opening a comment captures only selection and leaves document flush for submit',async()=>{
+  const f=fixture();await f.el('workspace-comment').onclick();
+  assert.deepEqual(f.calls,['capture_selection']);
+  assert.equal(f.el('comment-text').id,'comment-text');
 });

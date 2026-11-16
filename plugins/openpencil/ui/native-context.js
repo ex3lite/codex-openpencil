@@ -14,8 +14,8 @@ setInterval(async () => {
   if (!nativeEditor.ready || nativeContextPolling || document.hidden) return;
   nativeContextPolling = true;
   try {
-    const state = await nativeEditor.call('canvas_status');
+    const state = await nativeEditor.call('canvas_panel_state');
     nativeWorkspace.update(state);
   } catch { nativeWorkspace.contextUnavailable(); }
-  finally { nativeContextPolling = false; publishNativeContext(); }
+  finally { nativeContextPolling = false; }
 }, 1000);

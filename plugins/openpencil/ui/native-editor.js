@@ -5,7 +5,7 @@ const nativeEditor = (() => {
   let replacementBarrier = Promise.resolve(), autosaveTimer, autosaveDeadline, autosaveFailed = false, rejectedSnapshot = null, restoring = false;
   const snapshots = new Map(), listeners = new Set();
   const element = id => document.getElementById(id);
-  const value = result => result.structuredContent ?? JSON.parse(result.content.find(item => item.type === 'text').text);
+  const value = result => result._meta?.panelState ?? result.structuredContent ?? JSON.parse(result.content.find(item => item.type === 'text').text);
   const call = async (name, args = {}) => value(await nativeBridge.call(name, args));
   function status(text, error = false) {
     const box = element('operation-status');
@@ -14,6 +14,13 @@ const nativeEditor = (() => {
   function send(message) { OpenPencilEngine.receive(JSON.stringify(message)); }
   function updateName() {
     OpenPencilEngine.documentName(source ? source.split(/[\\/]/).pop() : 'Без названия');
+  }
+  async function captureSelection() {
+    if(!ready||closed)throw Error('Редактор ещё не готов.');
+    const result=await nativeBridge.call('canvas_native_request',{
+      path:'/api/mcp/selection',method:'POST',body:OpenPencilEngine.selection()});
+    if(result._meta?.nativeHttp?.status!==200)throw Error('Выделение ещё синхронизируется.');
+    return call('canvas_panel_state');
   }
   function flush() {
     if (restoring) return Promise.reject(Error('Дождитесь восстановления версии на холсте.'));
@@ -147,7 +154,7 @@ const nativeEditor = (() => {
       send({type:'op-bridge/resolve-conflict',mode:'accept-remote',requestId:crypto.randomUUID()});
     },
     syncBarrier() { return replacementBarrier; },
-    send, flush, call, status,
+    send, flush, captureSelection, call, status,
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };
 })();

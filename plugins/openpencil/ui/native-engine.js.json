@@ -1,6 +1,6 @@
 {
   "entrySha256": "f276e09dbc74c5b171b3c20c7d8fbb9ae4938981688fee23ef63578b87a75a5c",
-  "engineSha256": "a9fe21222cb4a6124ce9dcb40d68d2fbd5aa7d21dc62f68ae3e37a81607d8592",
+  "engineSha256": "380764393b3fa98340e52bbeeaf02f28d81288a48e7c9a41590a685b7ad3750b",
   "runtimeVersion": "0.8.5",
   "generatedWith": "bun build",
   "sourceRepository": "https://github.com/ex3lite/openpencil"

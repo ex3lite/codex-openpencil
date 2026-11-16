@@ -56,6 +56,7 @@ export const canvasTools = [
   { name: 'canvas_launch_status', description: 'Read whether the browser canvas for this launch has actually connected.',
     inputSchema: { ...schema({ launchId: { type: 'string' } }), required: ['launchId'] },
     annotations: { readOnlyHint: true, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
+  { name:'canvas_panel_state', description:'App-only private editor state. Selection stays in MCP metadata and is not published to model context.', inputSchema:schema({}), annotations:{readOnlyHint:true,openWorldHint:false}, _meta:{ui:{visibility:['app']}} },
   { name: 'canvas_status', description: 'Read managed canvas file, recovery path, document version and selection.', inputSchema: schema({}),
     annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: 'canvas_selection', description: 'Read the current managed canvas selection: exact node IDs, names, types, parents, active page and document version. Call before modifying selected elements from a chat prompt; read these nodes with batch_get, then edit only their subtrees. Empty selection means no target, never the entire page.',
@@ -198,7 +199,7 @@ export class CanvasController {
     if (name === 'open_canvas' || name === 'canvas_open_browser') return this.open(args);
     if(name==='canvas_community_catalog_status')return toolResult(await dispatchCatalogTool(this,name,args));
     if (!this.session) throw new Error('Open a managed canvas with canvas_open_browser or open_canvas first.');
-    if(this.projectSwitchUncertain && !['canvas_status','canvas_selection','canvas_documents','canvas_comments','canvas_agents','canvas_history','canvas_history_status'].includes(name)) throw Error('Переключение макета не подтверждено. Изменения остановлены; откройте сохранённый проект заново.');
+    if(this.projectSwitchUncertain && !['canvas_panel_state','canvas_status','canvas_selection','canvas_documents','canvas_comments','canvas_agents','canvas_history','canvas_history_status'].includes(name)) throw Error('Переключение макета не подтверждено. Изменения остановлены; откройте сохранённый проект заново.');
     if(name==='canvas_design_system_audit'||name==='canvas_design_system_init') return toolResult(await designSystemOperation(this,name,args));
     if(name==='canvas_autosave') {
       const result=await this.persistence.flush(args);
@@ -248,8 +249,9 @@ export class CanvasController {
     if (name === 'canvas_codegen_cancel') return toolResult(cancelCodegen(this, args));
     if (name === 'canvas_codegen_poll') return toolResult(pollCodegen(this, args));
     const current = await readCanvasSelection(this.session);
-    return toolResult({ filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
-      project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,autosave:this.persistence?.status(),agents:this.agents?.status(),comments:this.comments?await this.comments.list():[] });
+    const state = { pluginVersion:'0.13.1', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
+      project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,autosave:this.persistence?.status(),agents:this.agents?.status(),comments:this.comments?await this.comments.list():[] };
+    return name==='canvas_panel_state' ? {content:[],_meta:{panelState:state}} : toolResult(state);
   }
   async restoreHistory({ id, docJson } = {}) {
     if (this.agents?.status().agents.length) throw Error('Finish active agents before restoring history.');
@@ -312,7 +314,7 @@ export class CanvasController {
       }
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.13.0' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.13.1' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }

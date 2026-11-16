@@ -132,7 +132,7 @@ request to edit the whole page: ask the user to select a target. For a desktop
 editor without a managed canvas, use `get_editor_state` and read its selection.
 
 Use the current Codex chat for instructions, progress and results. The canvas
-provides explicit Comments and Context controls, with explicit pinned context attachments. Live selection is not implicitly attached.
+provides a direct «В контекст» button for the current selection, a pinned attachment list, and separate comments. Background selection/status polling remains private to the App and never publishes model context. Live selection is not implicitly attached.
 Inspect the visible attachment list and honor fixed targets. For a comment request, read `canvas_comments` by its comment ID first;
 use its captured document, page, node IDs and version. Do NOT replace its target
 with the current selection. If the design changed, read the exact anchored nodes

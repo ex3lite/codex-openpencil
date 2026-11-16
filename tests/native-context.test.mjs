@@ -70,23 +70,15 @@ test('failed identical context waits for explicit retry instead of replaying eve
   await settle(); assert.equal(attempts,1); assert.equal(delivery.status.state,'error');
   delivery.retry(); await settle(); assert.equal(attempts,2); assert.equal(delivery.status.state,'accepted');
 });
-test('polling sends one clear on status failure and one recovery, without reading history or sending chat messages',async()=>{
-  const context=helper().create(), calls=[]; let tick, fail=false;
+test('background polls and selection changes never publish model context',async()=>{
+  const context=helper().create(),calls=[];let tick,fail=false,current=state();
   const sandbox=vm.createContext({document:{hidden:false},setInterval(fn){tick=fn;},nativeContextState:helper(),
-    nativeEditor:{ready:true,async call(name){calls.push(name);if(fail)throw Error('offline');return state();}},
+    nativeEditor:{ready:true,async call(name){calls.push(name);if(fail)throw Error('offline');return current;}},
     nativeBridge:{capabilities:{updateModelContext:{}},async request(method,args){calls.push({method,args});return {};}},
-    nativeWorkspace:{contextData:()=>context.payload(),update:s=>context.observe(s),contextUnavailable:()=>context.unavailable(),
-      contextDelivery(){},onContextChange(){}}});
+    nativeWorkspace:{contextData:()=>context.payload(),update:s=>context.observe(s),contextUnavailable:()=>context.unavailable(),contextDelivery(){},onContextChange(){}}});
   vm.runInContext(pollSource,sandbox);
-  await tick(); await settle(); await tick(); await settle();
-  assert.equal(calls.filter(c=>typeof c==='object').length,1);
-  context.add(); await tick(); await settle();
-  fail=true; await tick(); await settle(); await tick(); await settle();
-  let sends=calls.filter(c=>typeof c==='object'); assert.equal(sends.length,3);
-  assert.equal(JSON.parse(sends.at(-1).args.content[0].text).unavailable,true);
-  assert.equal(JSON.parse(sends.at(-1).args.content[0].text).attachments.length,0);
-  fail=false; await tick(); await settle();
-  sends=calls.filter(c=>typeof c==='object'); assert.equal(sends.length,4);
-  assert.equal(JSON.parse(sends.at(-1).args.content[0].text).attachments.length,1);
-  assert.ok(calls.every(c=>typeof c==='object'?c.method==='ui/update-model-context':c==='canvas_status'));
+  await tick();await settle();current=state('n2',2);await tick();await settle();
+  fail=true;await tick();await settle();fail=false;await tick();await settle();
+  assert.equal(calls.filter(c=>typeof c==='object').length,0);
+  assert.ok(calls.every(c=>c==='canvas_panel_state'));
 });

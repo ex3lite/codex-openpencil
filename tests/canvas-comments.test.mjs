@@ -23,11 +23,11 @@ test('comments retain exact targets across selection changes and reopen', async 
   assert.deepEqual(reopened[0], saved); assert.deepEqual(saved.nodeIds, ['a']);
   assert.equal(saved.documentId, 'd1'); assert.equal(saved.version, 3);
 });
-test('stale selection or revision never creates a comment', async t => {
+test('deleted target or stale revision never creates a comment', async t => {
   const f = await fixture(t); f.live.version++;
   await assert.rejects(f.journal.create(f.args), /Макет изменился/);
-  f.live.version--; f.state.selection_ids = '';
-  await assert.rejects(f.journal.create(f.args), /Выделение изменилось/);
+  f.live.version--; f.live.document.children=[];
+  await assert.rejects(f.journal.create(f.args), /Закреплённый слой/);
   assert.deepEqual(await f.journal.list(), []);
 });
 test('duplicate request has one durable comment and cannot change the target', async t => {
@@ -36,4 +36,10 @@ test('duplicate request has one durable comment and cannot change the target', a
   assert.equal((await f.journal.list()).length, 1);
   await f.journal.update({ commentId: f.args.requestId, status: 'uncertain' });
   assert.equal((await f.journal.list())[0].status, 'uncertain');
+});
+
+test('a later selection cannot redirect or block a pinned comment before submit',async t=>{
+  const f=await fixture(t);f.state.selection_ids='';
+  const saved=await f.journal.create(f.args);
+  assert.deepEqual(saved.nodeIds,['a']);assert.equal(saved.nodes[0].name,'Кнопка');
 });

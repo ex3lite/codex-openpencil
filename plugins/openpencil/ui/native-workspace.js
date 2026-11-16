@@ -1,7 +1,7 @@
 // Visible project, feedback and context controls around the original Rust editor.
 const nativeWorkspace = (() => {
   const $ = id => document.getElementById(id);
-  let state, mode, target, sending = false, displayedMode, commentDraft = null;
+  let state, mode, target, sending = false, displayedMode, commentDraft = null, commentsKey;
   let contextChanged = () => {}, retryContext = () => {}, delivery = {state:'pending'}, contextNotice = '';
   const context = nativeContextState.create();
   const drawer = $('workspace-drawer');
@@ -36,7 +36,7 @@ const nativeWorkspace = (() => {
     $('workspace-context').textContent = `Контекст · ${context.attachments.length}`;
   }
   async function addContext() {
-    const current = await nativeEditor.call('canvas_status');
+    const current = await nativeEditor.captureSelection();
     if (context.observe(current)) contextNotice = 'Открыт другой макет. Вложения предыдущего макета удалены.';
     state = current;
     contextEdit(() => context.add());
@@ -56,11 +56,11 @@ const nativeWorkspace = (() => {
   }
   function renderContext() {
     show('context', 'Контекст этого чата');
-    drawer.append(make('p', 'Добавьте нужные слои. Вложения останутся в контексте, пока вы их не удалите или не откроете другой макет.'));
+    drawer.append(make('p', 'Выберите слой и нажмите «В контекст». Вложение закрепится до удаления; обычные клики ничего не прикрепляют.'));
     const selection = make('p'); selection.id = 'context-selection';
     const add = button('Добавить в контекст', addContext, 'primary'); add.id = 'context-add';
     drawer.append(selection, add, make('h3', `Вложения · ${context.attachments.length}`));
-    if (!context.attachments.length) drawer.append(make('p', 'Слои не добавлены. Codex получает только название проекта и адрес открытого макета.'));
+    if (!context.attachments.length) drawer.append(make('p', 'Прикреплённых элементов пока нет.'));
     for (const attachment of context.attachments) {
       const item = make('article', null, 'item context-attachment');
       item.append(make('strong', attachment.nodes.map(node => node.name || node.type || node.id).join(', ') || attachment.nodeIds.join(', ')),
@@ -87,10 +87,9 @@ const nativeWorkspace = (() => {
     if(!nativeBridge.capabilities.message?.text) throw Error('Codex не предоставил отправку комментариев из этой панели. Комментарий можно написать в текущем чате.');
     rememberDraft();
     if (commentDraft) { target=commentDraft.target; return renderComment(commentDraft.text); }
-    const snapshot = await nativeEditor.flush();
-    const current = await nativeEditor.call('canvas_status');
+    const current=await nativeEditor.captureSelection();
     if (!current.selection?.count) { nativeEditor.status('Сначала выделите элемент на холсте или в списке слоёв.'); return; }
-    target = { ...current, docJson: snapshot.docJson, requestId: crypto.randomUUID() };
+    target = { ...current, requestId: crypto.randomUUID() };
     renderComment('');
   }
   function renderComment(previousText) {
@@ -107,8 +106,11 @@ const nativeWorkspace = (() => {
     if (sending || !text.trim()) return;
     sending = true; control.disabled = true;
     try {
+      const snapshot=await nativeEditor.flush();
+      const current=await nativeEditor.call('canvas_panel_state');
+      if(current.documentId!==target.documentId)throw Error('Открыт другой макет. Выберите цель заново.');
       const comment = await nativeEditor.call('canvas_comment_create', { requestId: target.requestId, text,
-        pageId:target.selection.pageId, nodeIds:target.selection.nodeIds, expectedVersion:target.version, docJson:target.docJson });
+        pageId:target.selection.pageId, nodeIds:target.selection.nodeIds, expectedVersion:current.version, docJson:snapshot.docJson });
       // One explicit user action produces one message. An uncertain send is not replayed.
       try {
         const result = await nativeBridge.request('ui/message', { role: 'user', content: [{ type:'text', text:
@@ -123,8 +125,9 @@ const nativeWorkspace = (() => {
       commentDraft=null; target=null; mode=null; await renderComments();
     } finally { sending = false; control.disabled = false; }
   }
-  async function renderComments() {
-    const comments = await nativeEditor.call('canvas_comments');
+  async function renderComments() { paintComments(await nativeEditor.call('canvas_comments')); }
+  function paintComments(comments) {
+    commentsKey=JSON.stringify(comments);
     show('comments', 'Комментарии'); drawer.append(button('К выделенному элементу', captureComment, 'primary'));
     if (!comments.length) drawer.append(make('p', 'Выделите элемент и оставьте первый комментарий.'));
     for (const c of comments.slice().reverse()) {
@@ -163,6 +166,9 @@ const nativeWorkspace = (() => {
   }
   const openLibrary=()=>nativeLibrary.open({show,drawer,make,button}).catch(e=>nativeEditor.status(e.message,true));
   $('workspace-library').onclick=openLibrary;
+  $('workspace-attach').onclick=()=>addContext().catch(e=>nativeEditor.status(e.message,true));
+  $('workspace-inspector').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-inspector'});
+  $('workspace-inspector-close').onclick=$('workspace-inspector').onclick;
   $('workspace-sidebar').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-sidebar'});
   $('workspace-preview').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-preview'});
   $('workspace-fit').onclick=()=>nativeEditor.send({type:'op-bridge/fit-content'});
@@ -182,6 +188,13 @@ const nativeWorkspace = (() => {
   nativeBridge.onContext(updateExpand);
   nativeEditor.onEvent(event => {
     if(event.type==='op-bridge/ready') updateExpand();
+    if(event.type==='op-shell/panels-state') {
+      $('workspace-sidebar').textContent=event.layers?'Скрыть слои':'Показать слои';
+      $('workspace-sidebar').setAttribute('aria-pressed',String(event.layers));
+      $('workspace-inspector').textContent=event.inspector?'Скрыть свойства':'Показать свойства';
+      $('workspace-inspector').setAttribute('aria-pressed',String(event.inspector));
+      $('workspace-inspector-close').hidden=!event.inspectorVisible;
+    }
     if(event.type==='op-shell/preview-state') {
       $('workspace-preview').setAttribute('aria-pressed',String(event.active));
       $('workspace-preview').textContent=event.active?'В редактор':'Проверить';
@@ -206,7 +219,7 @@ const nativeWorkspace = (() => {
     update(current) {
       state = current;
       const switched = context.observe(current);
-      if (switched) {commentDraft=null; target=null;}
+      if (switched) {commentDraft=null; target=null; contextChanged();}
       if (switched) contextNotice = 'Открыт другой макет. Вложения предыдущего макета удалены.';
       const saving=current.autosave;
       const failed=['error','snapshot-rejected'].includes(saving?.state);
@@ -217,10 +230,12 @@ const nativeWorkspace = (() => {
       $('workspace-project').textContent=current.project?.name||'Проект';
       $('workspace-context').textContent = `Контекст · ${context.attachments.length}`;
       $('workspace-context').title = 'Только явно добавленные вложения';
+      $('workspace-attach').disabled=!current.selection?.count || !nativeBridge.capabilities.updateModelContext;
       $('workspace-comment').disabled = !current.selection?.count;
       const agentCount=current.agents?.agents?.length||0;
       $('toolbar-agents').hidden=!agentCount; $('workspace-agents').hidden=!agentCount;
       $('workspace-agents').textContent=`Агенты · ${agentCount}`;
+      if(mode==='comments' && JSON.stringify(current.comments||[])!==commentsKey)paintComments(current.comments||[]);
       if (mode === 'context') {
         if (switched) renderContext();
         refreshContextSelection();

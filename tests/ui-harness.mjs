@@ -42,7 +42,7 @@ export async function createUiHarness(kind, { dark = false, embedded = true, has
   window.parent = parent;
   window.postMessage = (data, origin) => hostMessages.push({ data, origin });
   if (openaiTheme !== undefined) window.openai = { theme: openaiTheme };
-  const document = { documentElement: root, getElementById: element, hidden: false, referrer: '' };
+  const document = events({ documentElement: root, getElementById: element, hidden: false, referrer: '' });
   const timers = new Map(); let timerId = 0;
   const navigator = { clipboard: { writeText: async text => { clipboard.push(text); } } };
   const context = vm.createContext({ URL, URLSearchParams, window, document, navigator, location: window.location, console,

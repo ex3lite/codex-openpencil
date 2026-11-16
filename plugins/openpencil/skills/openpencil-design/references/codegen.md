@@ -21,8 +21,11 @@ reminders alone never authorize implementation.
    Reuse image assets from the design; export required local assets into the project.
    For a chat-only conversion without a panel request, call `codegen_export` with
    the explicitly requested framework, page and node IDs.
-4. Implement and run relevant checks. For a web project, open it in the user's
-   existing browser context and compare the rendered page with the native design.
+4. Implement and run relevant checks. Use ui-sdk behavior primitives with the
+   project's framework and semantic design tokens; use the installed gestures
+   skill for pointer tracking, cancellation and reduced motion. When the user
+   asks to test the mockup, open a local browser preview and compare it with the
+   native design. Publish through ChatGPT Sites only when sharing is requested.
    Report any untested platform or unavailable preview. Do not change the `.op`
    design as a side effect of implementation.
 5. For a panel request, call `canvas_codegen_complete` with its `requestId` and the

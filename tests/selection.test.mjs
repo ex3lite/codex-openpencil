@@ -151,9 +151,11 @@ test('The panel rejects removed edit controls without dispatching them', async t
 
 test('Fast selection polling cannot starve the recovery checkpoint timer', async () => {
   const ui = await readyPanel();
-  ui.state('checkpointSoon()'); const timerId = ui.state('checkpointTimer');
+  ui.state('dirty=true;checkpointSoon()'); const timerId = ui.state('checkpointTimer');
   ui.state('checkpointSoon()'); assert.equal(ui.state('checkpointTimer'),timerId);
   ui.timers.get(timerId)(); await settle();
-  assert.ok(ui.rpcCalls.some(item=>JSON.parse(item.options.body).name==='canvas_checkpoint'));
+  const request=ui.editorMessages.findLast(item=>item.type==='op-bridge/snapshot');
+  ui.editor({type:'op-bridge/snapshot-result',requestId:request.requestId,docJson:'{}',generation:0,revision:0});await settle();
+  assert.ok(ui.rpcCalls.some(item=>JSON.parse(item.options.body).name==='canvas_autosave'));
   assert.equal(ui.state('checkpointTimer'),undefined);
 });

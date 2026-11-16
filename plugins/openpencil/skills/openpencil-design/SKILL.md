@@ -35,6 +35,26 @@ the native app unless the user requested that or a concrete host limitation
 has been explained. Resource retrieval alone does not prove visible rendering.
 Do not open a new managed document merely to inspect an existing selection.
 
+## Local Codex product
+
+Codex owns the chat, accounts, model execution and plugin connection. Do not ask
+users to configure providers, API keys or MCP. MCP Apps remains the internal
+transport for tools, synchronization and the embedded editor, not a user workflow.
+Human multiplayer/rooms are disabled in Codex. Preserve up to ten local Codex
+subagents, assignment scopes, named cursors and visible activity while they work.
+
+Build interactive web controls from [ui-sdk](https://ui-sdk.dev/) primitives for
+the project's framework and style them with the project's semantic design tokens.
+Use pinned, locally bundled dependencies. Keep Rust/WASM for the editable scene;
+never replace the canvas with an HTML screenshot or rewrite its model in React.
+For gestures follow [gestures](https://aiforui.dev/skills/gestures): direct pointer
+tracking, interruption and cancellation, release physics only after release,
+correct touch-action and reduced motion. Avoid animation on frequent canvas input.
+
+Open a browser mockup only when the user asks to test one. Share through ChatGPT
+Sites only on an explicit sharing request; follow the installed Sites workflow.
+Never auto-publish, expose a LAN server or upload resources just to verify a design.
+
 ## Required design system
 
 Every UI project must include editable foundations and a UI Kit with shared
@@ -183,18 +203,18 @@ Use Codex collaboration tools for delegation; never call the editor's builtin
    is unavailable, report that limit rather than claiming a visual pass.
    For phone screens with system chrome, verify exactly one complete set of
    time, cellular signal, Wi-Fi, and battery indicators, with no duplicate bar.
-3. For managed interactive persistence, confirmed document pushes checkpoint
-   the recovery draft. The native Save/Save As commands first await the
-   editor snapshot and selection flush, then acknowledge only the saved revision.
-   Project documents, comments and recovery live in `.openpencil` under the
-   bound workspace. Use the project document list to switch after a UI flush.
-   Opening/importing another document detaches the previous save destination.
-   Direct `canvas_save` and intercepted `save_document` calls save the daemon's
-   current snapshot; verify pending edits have synced before calling them. Save
-   As requires a new path; source conflicts stop saves and retain recovery drafts.
-   For an existing desktop editor, call `save_document` with the intended absolute
-   `.op` path. Read/reopen the saved file to verify page count and key nodes.
-   Avoid overwriting unrelated files or changing the active canvas just to test.
+3. Managed project documents always autosave; confirmed pushes checkpoint recovery
+   and the current project file. The UI has no Save, Save As, path picker, import,
+   project chooser, room connection or history dialog. Use `canvas_autosave` after
+   verified agent changes. Read `canvas_history` and use `canvas_history_restore`
+   only when restoration is requested. Resolve pending editor edits before a
+   restore or document switch. The exact acknowledged revision is marked clean;
+   later edits remain pending. Never retry a failed mutation automatically.
+   Source conflicts retain recovery and stop writes until the agent resolves them.
+   Project catalog, comments and history live in `.openpencil` in this chat's
+   workspace. Import/acquire/switch resources through agent tools as needed.
+   Verify the saved page count and key nodes without changing the active canvas
+   or opening a second writer on the user's file.
 4. Return clickable absolute file links and local image previews where available.
    Distinguish changes on canvas, saved artifacts, visual QA, and publication.
    Saving a design does not authorize publishing or submitting it externally.

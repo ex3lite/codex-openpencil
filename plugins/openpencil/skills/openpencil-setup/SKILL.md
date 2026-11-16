@@ -3,12 +3,17 @@ name: openpencil-setup
 description: Connect and diagnose OpenBrush, the local Rust OpenPencil fork for Codex. Use for initial setup, missing tools, or a disconnected local canvas.
 ---
 
-# Connect OpenBrush
+# Open OpenBrush
 
 The plugin opens a managed interactive Rust canvas or connects to an existing
 desktop editor. First canvas use automatically downloads the matching complete
 runtime from pinned public GitHub Release assets and validates its SHA-256,
 payload manifest, version and platform before configuring or starting it.
+
+Codex owns accounts, models and the chat. Never ask the user to connect MCP,
+configure another provider or manage save/import dialogs. The managed canvas
+always autosaves in the current chat workspace and retains agent-readable history.
+Human network rooms are disabled; scoped local Codex subagents remain available.
 
 ## Interactive canvas
 
@@ -22,8 +27,7 @@ payload manifest, version and platform before configuring or starting it.
    it does not embed a localhost iframe. The source is copied into a recovery
    draft. Codex owns the conversation: do not configure a second AI provider.
    A local `panelUrl` is a separate browser fallback, not proof of native UI.
-   Use `canvas_open_browser` only for an explicitly requested browser editor
-   or a disclosed host limitation. Never silently substitute that view for
+   Use `canvas_open_browser` only for an explicitly requested browser editor. Never silently substitute that view for
    the requested app-in-chat integration.
 2. Missing runtime configuration triggers installation automatically. Allow the
    initial download to finish; do not repeatedly call either opener after a host
@@ -35,12 +39,12 @@ payload manifest, version and platform before configuring or starting it.
    A complete custom package can be selected with
    `OPENPENCIL_EDITOR_RUNTIME_DIR`; it needs a matching native server, editable
    WASM, CanvasKit and integrity manifest. A desktop binary alone is insufficient.
-3. Use the UI resource/thread entrypoint, or show the returned local `panelUrl`
-   in hosts without MCP Apps. Verify `canvas_status` and `get_editor_state`:
+3. Use the UI resource/thread entrypoint. A host without MCP Apps must be
+   reported as a limitation; a browser fallback still requires a user request. Verify `canvas_status` and `get_editor_state`:
    they must describe the same managed document before editing.
 4. Each conversation keeps one canvas bound to its Codex project. Use
-   `canvas_documents` and the project menu to switch documents after flushing
-   edits. The catalog and recovery drafts live in `<projectRoot>/.openpencil/`;
+   `canvas_documents` and agent document tools to switch after flushing
+   edits; there is no user project/file menu. The catalog and recovery drafts live in `<projectRoot>/.openpencil/`;
    select the registered document ID to restore its draft and save destination.
    Import an external file explicitly with `canvas_document_import`, which copies
    it directly into this project folder. One document has one writer;
@@ -64,6 +68,11 @@ provides the same editable canvas and accepts
 native tool requests through a persistent terminal's stdin. Use that entry point
 to complete the design now, then explain that reconnect loads the installed tools.
 Never mistake a successful install for a verified live canvas.
+
+## Optional standalone diagnosis
+
+Use this section only if the user explicitly requests an external standalone
+editor. It is not a setup step or fallback for the embedded Codex product.
 
 ## Existing desktop editor
 

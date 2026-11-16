@@ -5,24 +5,25 @@ import vm from 'node:vm';
 const source=await readFile(new URL('../plugins/openpencil/ui/native-workspace.js',import.meta.url),'utf8');
 const helper=await readFile(new URL('../plugins/openpencil/ui/native-context-state.js',import.meta.url),'utf8');
 function fixture() {
-  const elements=new Map();
+  const elements=new Map(),handlers=new Map(),sent=[];let editorEvent,closed;
   const make=tag=>({tag,textContent:'',children:[],dataset:{},attributes:{},hidden:false,
     set id(id){this._id=id;elements.set(id,this);},get id(){return this._id;},
     append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;},
-    setAttribute(name,value){this.attributes[name]=value;},focus(){}});
+    setAttribute(name,value){this.attributes[name]=value;},getAttribute(name){return this.attributes[name];},focus(){}});
   const el=id=>{if(!elements.has(id)){const node=make('div');node.id=id;}return elements.get(id);};
   let current={project:{projectId:'p1',name:'Project'},documentId:'d1',canvasId:'c1',filePath:'/project/a.op',version:1,
     selection:{pageId:'page',count:1,nodeIds:['n1'],nodes:[{id:'n1',name:'Button',type:'FRAME'}]}};
   const calls=[],payloads=[];
-  const sandbox=vm.createContext({document:{getElementById:el,createElement:make,body:{dataset:{}},querySelectorAll:()=>[],addEventListener(){}},
-    window:{dispatchEvent(){}},Event:class{},nativeBridge:{context:{},capabilities:{updateModelContext:{}},onContext(){}},
-    nativeEditor:{ready:false,onEvent(){},status(message){throw Error(message);},async call(name){calls.push(name);return current;}}});
+  const sandbox=vm.createContext({document:{getElementById:el,createElement:make,body:{dataset:{}},querySelectorAll:()=>[],addEventListener(name,fn){handlers.set(name,fn);}},
+    nativeUI:{openPanel(){},closePanel(){closed?.();},onClose(fn){closed=fn;},button(text,action,cls){const c=make('button');c.textContent=text;c.className=cls;c.onclick=action;return c;}},
+    window:{dispatchEvent(){}},Event:class{},nativeBridge:{context:{},capabilities:{updateModelContext:{},message:{text:{}}},onContext(){}},
+    crypto:{randomUUID:()=> 'request'},nativeEditor:{ready:false,onEvent(fn){editorEvent=fn;},send(message){sent.push(message);},async flush(){return {docJson:'{}'};},status(message){throw Error(message);},async call(name){calls.push(name);return current;}}});
   vm.runInContext(helper+'\n'+source+';globalThis.workspace=nativeWorkspace;',sandbox);
   const workspace=sandbox.workspace;
   workspace.onContextChange(()=>payloads.push(JSON.stringify(workspace.contextData())),()=>{});
   workspace.update(current);
   const buttons=()=>{const result=[];function walk(node){if(node.tag==='button')result.push(node);for(const child of node.children||[])walk(child);}walk(el('workspace-drawer'));return result;};
-  return {el,calls,payloads,workspace,buttons,setCurrent(value){current=value;},get current(){return current;}};
+  return {el,calls,payloads,workspace,buttons,sent,handlers,event:event=>editorEvent(event),close:()=>closed(),setCurrent(value){current=value;},get current(){return current;}};
 }
 test('context drawer adds/removes explicit targets, previews the exact payload and leaves selection reads side-effect free',async()=>{
   const f=fixture();f.el('workspace-context').onclick();
@@ -43,4 +44,25 @@ test('context drawer adds/removes explicit targets, previews the exact payload a
   assert.equal(JSON.parse(f.payloads[1]).attachments.length,0);
   assert.equal(f.el('workspace-context').textContent,'Контекст · 0');
   assert.deepEqual(f.calls,['canvas_status']);
+});
+
+test('a comment draft keeps its captured target after Escape and another selection',async()=>{
+  const f=fixture();await f.el('workspace-comment').onclick();
+  f.el('comment-text').value='Сделай крупнее';f.close();
+  const next={...f.current,version:2,selection:{pageId:'page',count:1,nodeIds:['n2'],nodes:[{id:'n2',name:'Other',type:'FRAME'}]}};
+  f.setCurrent(next);f.workspace.update(next);
+  await f.el('workspace-comment').onclick();
+  assert.equal(f.el('comment-text').value,'Сделай крупнее');
+  const text=[];function walk(n){text.push(n.textContent);for(const c of n.children||[])walk(c);}walk(f.el('workspace-drawer'));
+  assert.ok(text.includes('Button'));assert.ok(text.some(t=>/n1.*версия 1/.test(t)));
+  assert.equal(text.includes('Other'),false);
+});
+test('Escape in the host toolbar exits preview but an open drawer owns Escape',()=>{
+  const f=fixture();f.event({type:'op-shell/preview-state',active:true});
+  const event={key:'Escape',preventDefault(){this.prevented=true;},composedPath:()=>[{hasAttribute:()=>true}]};
+  f.handlers.get('keydown')(event);
+  assert.deepEqual(JSON.parse(JSON.stringify(f.sent)),[{type:'op-bridge/toggle-preview'}]);
+  assert.equal(event.prevented,true);
+  f.el('workspace-context').onclick();f.handlers.get('keydown')(event);
+  assert.equal(f.sent.length,1);
 });

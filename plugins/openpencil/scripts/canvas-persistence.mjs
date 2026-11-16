@@ -6,9 +6,9 @@ import { diskDocument, snapshotMatches } from './document-format.mjs';
 
 /** Owns one document only. Uncertain writes stop until explicit recovery/reopen. */
 export class CanvasPersistence {
-  constructor(controller, { debounceMs = 700, historyMs = 2000 } = {}) {
+  constructor(controller, { debounceMs = 700, historyMs = 2000, maxWaitMs = 2000 } = {}) {
     this.controller = controller; this.session = controller.session; this.documentId = controller.documentId;
-    this.debounceMs = debounceMs; this.historyMs = historyMs;
+    this.maxWaitMs = maxWaitMs; this.debounceMs = debounceMs; this.historyMs = historyMs;
     this.history = new CanvasHistory({ catalog: controller.project, documentId: this.documentId });
     this.state = 'pending'; this.queue = Promise.resolve(); this.disposed = false;
   }
@@ -39,15 +39,17 @@ export class CanvasPersistence {
     this.state = 'pending'; clearTimeout(this.timer);
     this.timer = setTimeout(() => this.controller.enqueue(() => this.flush()).catch(() => {}), this.debounceMs);
     this.timer.unref?.();
+    this.deadline ??= setTimeout(() => this.controller.enqueue(() => this.flush()).catch(() => {}), this.maxWaitMs);
+    this.deadline.unref?.();
   }
-  fail(error) { this.error = error; this.state = 'error'; clearTimeout(this.timer); clearTimeout(this.historyTimer); }
+  fail(error) { this.error = error; this.state = 'error'; clearTimeout(this.timer); clearTimeout(this.deadline); this.deadline=null; clearTimeout(this.historyTimer); clearTimeout(this.historyDeadline); this.historyDeadline=null; }
   async persist({ docJson, source = 'edit', restoredFrom, forceHistory = false } = {}) {
     this.assertCurrent();
     if (this.error) throw this.error;
     try {
       const live = await this.session.document();
       // A checkpoint for the rejected revision is not a new edit. Do not turn
-      // it into an automatic retry; an explicit UI save can present a fresh snapshot.
+      // it into an automatic retry; an explicit agent recovery can present a verified fresh snapshot.
       if (docJson === undefined && this.rejection?.version === live.version) {
         this.state = 'snapshot-rejected'; throw this.rejection.error;
       }
@@ -73,20 +75,22 @@ export class CanvasPersistence {
         clearTimeout(this.historyTimer);
         this.historyTimer = setTimeout(() => this.controller.enqueue(() => this.enqueue(() => this.commitHistory())).catch(error => this.fail(error)), this.historyMs);
         this.historyTimer.unref?.();
+        this.historyDeadline ??= setTimeout(() => this.controller.enqueue(() => this.enqueue(() => this.commitHistory())).catch(error => this.fail(error)), 10000);
+        this.historyDeadline.unref?.();
       }
       return { ...this.session.lastSave, filePath: this.session.source, sha256: this.savedHash,
         version: this.lastSavedVersion, documentId: this.documentId, autosave: this.status() };
     } catch (error) {
       if (error.code === 'DOCUMENT_SNAPSHOT_STALE' && error.writeAttempted === false) {
         this.rejection = { error, version: error.version };
-        this.state = 'snapshot-rejected'; clearTimeout(this.timer);
+        this.state = 'snapshot-rejected'; clearTimeout(this.timer); clearTimeout(this.deadline); this.deadline=null;
       } else this.fail(error);
       throw error;
     }
   }
   async commitHistory(force = false) {
     this.assertCurrent(); if (this.error) throw this.error;
-    clearTimeout(this.historyTimer); this.historyTimer = null;
+    clearTimeout(this.historyTimer); clearTimeout(this.historyDeadline); this.historyDeadline=null; this.historyTimer = null;
     await this.controller.projectWriterLeases?.get(this.documentId)?.assertOwned();
     if (!this.pendingHistory) return this.history.list();
     const pending = this.pendingHistory;
@@ -94,7 +98,7 @@ export class CanvasPersistence {
     this.pendingHistory = null; return result;
   }
   flush(args = {}) {
-    clearTimeout(this.timer);
+    clearTimeout(this.timer); clearTimeout(this.deadline); this.deadline=null;
     return this.enqueue(() => this.persist(args));
   }
   async boundary() { await this.flush(); return this.enqueue(() => this.commitHistory()); }
@@ -102,5 +106,5 @@ export class CanvasPersistence {
     const value = await this.history.list();
     return { ...value, documentId: this.documentId, filePath: this.session.source, autosave: this.status() };
   }
-  dispose() { this.disposed = true; clearTimeout(this.timer); clearTimeout(this.historyTimer); }
+  dispose() { this.disposed = true; clearTimeout(this.timer); clearTimeout(this.deadline); this.deadline=null; clearTimeout(this.historyTimer); clearTimeout(this.historyDeadline); this.historyDeadline=null; }
 }

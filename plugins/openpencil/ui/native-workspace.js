@@ -1,7 +1,7 @@
 // Visible project, feedback and context controls around the original Rust editor.
 const nativeWorkspace = (() => {
   const $ = id => document.getElementById(id);
-  let state, mode, target, sending = false, displayedMode, projectBusy = false;
+  let state, mode, target, sending = false, displayedMode, commentDraft = null;
   let contextChanged = () => {}, retryContext = () => {}, delivery = {state:'pending'}, contextNotice = '';
   const context = nativeContextState.create();
   const drawer = $('workspace-drawer');
@@ -9,27 +9,22 @@ const nativeWorkspace = (() => {
     const element = document.createElement(tag); if (text) element.textContent = text;
     if (className) element.className = className; return element;
   }
-  function button(text, action, className) {
-    const control = make('button', text, className); control.type = 'button';
-    control.onclick = async () => {
-      if (control.disabled) return;
-      control.disabled = true;
-      try { await action(); } catch (error) { nativeEditor.status(error.message, true); }
-      finally { control.disabled = false; }
-    };
-    return control;
+  function button(text, action, className) { return nativeUI.button(text, action, className); }
+  function rememberDraft() {
+    const text = $('comment-text');
+    if (mode === 'comment' && target && text) commentDraft = {target, text:text.value};
   }
-  function close() {
-    mode = null; drawer.hidden = true; document.body.dataset.drawer = 'false';
+  function closed() {
+    rememberDraft(); mode = null;
     for (const b of document.querySelectorAll('#workspace-bar [aria-expanded]')) b.setAttribute('aria-expanded', 'false');
-    window.dispatchEvent(new Event('resize'));
   }
+  function close() { nativeUI.closePanel(); closed(); }
+  nativeUI.onClose(closed);
   function show(next, title) {
-    mode = next; drawer.replaceChildren(); drawer.hidden = false; document.body.dataset.drawer = 'true';
-    const active = { projects:'project', context:'context', comment:'comment', comments:'comments', agents:'agents', history:'history', library:'library' }[next];
+    rememberDraft(); mode = next; drawer.replaceChildren();
+    const active = {context:'context',comment:'comment',comments:'comments',agents:'agents',library:'library'}[next];
     for (const b of document.querySelectorAll('#workspace-bar [aria-expanded]')) b.setAttribute('aria-expanded', String(b.id === `workspace-${active}`));
-    const heading = make('div', null, 'drawer-heading'); heading.append(make('h2', title), button('Закрыть', close)); drawer.append(heading);
-    window.dispatchEvent(new Event('resize'));
+    nativeUI.openPanel(title, next === 'library', next === 'comment' ? '#comment-text' : 'content');
   }
   function describe(selection) {
     if (!selection?.count) return 'Выберите слой на холсте или в списке слоёв';
@@ -90,11 +85,15 @@ const nativeWorkspace = (() => {
   }
   async function captureComment() {
     if(!nativeBridge.capabilities.message?.text) throw Error('Codex не предоставил отправку комментариев из этой панели. Комментарий можно написать в текущем чате.');
-    const previousText=mode==='comment'?$('comment-text')?.value||'':'';
+    rememberDraft();
+    if (commentDraft) { target=commentDraft.target; return renderComment(commentDraft.text); }
     const snapshot = await nativeEditor.flush();
     const current = await nativeEditor.call('canvas_status');
     if (!current.selection?.count) { nativeEditor.status('Сначала выделите элемент на холсте или в списке слоёв.'); return; }
     target = { ...current, docJson: snapshot.docJson, requestId: crypto.randomUUID() };
+    renderComment('');
+  }
+  function renderComment(previousText) {
     show('comment', 'Комментарий к выделению'); drawer.append(targetBlock(target.selection));
     const label = make('label', 'Что изменить?'); label.htmlFor = 'comment-text';
     const text = document.createElement('textarea'); text.id = 'comment-text'; text.maxLength = 8000;
@@ -102,7 +101,7 @@ const nativeWorkspace = (() => {
     const send = button('Отправить в Codex', () => submitComment(text.value, send), 'primary'); send.disabled = !previousText.trim();
     text.oninput = () => { send.disabled = !text.value.trim() || sending; };
     drawer.append(label, text, make('p', 'Комментарий сохранится в проекте вместе с точной целью. Следующее выделение его не изменит.'));
-    const actions = make('div', null, 'actions'); actions.append(button('Обновить цель', captureComment), send); drawer.append(actions); text.focus();
+    const actions = make('div', null, 'actions'); actions.append(button('Выбрать другую цель', () => { commentDraft=null; target=null; mode=null; return captureComment(); }), send); drawer.append(actions); text.focus();
   }
   async function submitComment(text, control) {
     if (sending || !text.trim()) return;
@@ -121,7 +120,7 @@ const nativeWorkspace = (() => {
         await nativeEditor.call('canvas_comment_update', { commentId: comment.id, status:'uncertain' });
         nativeEditor.status(`Комментарий сохранён. Отправка не подтверждена: ${error.message}`, true);
       }
-      await renderComments();
+      commentDraft=null; target=null; mode=null; await renderComments();
     } finally { sending = false; control.disabled = false; }
   }
   async function renderComments() {
@@ -136,57 +135,6 @@ const nativeWorkspace = (() => {
         await nativeEditor.call('canvas_comment_update', { commentId:c.id, status:'resolved' }); await renderComments();
       }));
       drawer.append(item);
-    }
-  }
-  async function projectAction(action) {
-    if (projectBusy) return;
-    projectBusy = true;
-    try { await action(); } finally { projectBusy = false; }
-  }
-  async function renderProjects() {
-    const catalog = await nativeEditor.call('canvas_documents'); show('projects', 'Макеты проекта');
-    drawer.append(make('p', catalog.project.projectRoot));
-    drawer.append(button('Новый макет', () => projectAction(async () => {
-      const snapshot = await nativeEditor.flush();
-      const result = await nativeEditor.call('canvas_document_open', { create:true, docJson:snapshot.docJson });
-      nativeEditor.rebind(result); await renderProjects();
-    }), 'primary'));
-    for (const doc of catalog.documents) {
-      const item = make('div', null, 'item'); item.append(make('strong', doc.name), make('small', doc.relativePath || 'Черновик проекта'));
-      const active = doc.id === catalog.documentId;
-      const open = button(active ? 'Открыт' : 'Открыть', () => projectAction(async () => {
-        const snapshot = await nativeEditor.flush();
-        const result = await nativeEditor.call('canvas_document_open', { documentId:doc.id, docJson:snapshot.docJson });
-        nativeEditor.rebind(result); await renderProjects();
-      })); open.disabled = active; item.append(open); drawer.append(item);
-    }
-    drawer.append(make('h3', 'Импортировать копию'));
-    const input = document.createElement('input'); input.placeholder = '/…/Макет.op'; input.setAttribute('aria-label','Путь к файлу для импорта');
-    drawer.append(input, make('p', 'Внешний файл будет скопирован в папку этого проекта. Исходник сохранится.'));
-    drawer.append(button('Добавить в проект', () => projectAction(async () => {
-      await nativeEditor.call('canvas_document_import', { sourcePath:input.value.trim() }); await renderProjects();
-    })));
-  }
-  async function renderHistory(sync = true) {
-    if(sync) {
-    const snapshot = await nativeEditor.flush();
-    await nativeEditor.call('canvas_autosave',{docJson:snapshot.docJson});
-    }
-    const history = await nativeEditor.call('canvas_history'); show('history','История изменений');
-    drawer.append(make('p','Изменения сохраняются автоматически. Восстановление добавляет новую версию и сохраняет текущую в истории.'));
-    if (!history.entries?.length) drawer.append(make('p','Первые изменения появятся здесь автоматически.'));
-    for (const entry of history.entries || []) {
-      const item=make('article',null,'item');
-      item.append(make('strong',new Date(entry.createdAt).toLocaleString('ru-RU')),
-        make('small',`${entry.source==='restore'?'Восстановление':entry.source==='initial'?'Исходная версия':'Изменения'} · ${(entry.bytes/1024).toFixed(1)} КБ`));
-      item.append(button('Восстановить',async()=>{
-        const current=await nativeEditor.flush();
-        nativeEditor.beginRestore();
-        try {
-          const result=await nativeEditor.call('canvas_history_restore',{id:entry.id,docJson:current.docJson});
-          nativeEditor.acceptRestored(result); await renderHistory(false);
-        } catch(error) { nativeEditor.cancelRestore(); throw error; }
-      })); drawer.append(item);
     }
   }
   async function renderAgents() {
@@ -213,25 +161,38 @@ const nativeWorkspace = (() => {
       nativeEditor.send({type:'op-bridge/display-mode',mode:value});displayedMode=value;
     }
   }
-  $('workspace-history').onclick = () => renderHistory().catch(e => nativeEditor.status(e.message,true));
-  $('workspace-library').onclick = () => nativeLibrary.open({show,drawer,make,button}).catch(e => nativeEditor.status(e.message,true));
+  const openLibrary=()=>nativeLibrary.open({show,drawer,make,button}).catch(e=>nativeEditor.status(e.message,true));
+  $('workspace-library').onclick=openLibrary;
+  $('workspace-sidebar').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-sidebar'});
+  $('workspace-preview').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-preview'});
   $('workspace-fit').onclick=()=>nativeEditor.send({type:'op-bridge/fit-content'});
-  $('workspace-project').onclick = () => renderProjects().catch(e => nativeEditor.status(e.message,true));
   $('workspace-context').onclick = renderContext;
   $('workspace-comment').onclick = () => captureComment().catch(e => nativeEditor.status(e.message,true));
   $('workspace-comments').onclick = () => renderComments().catch(e => nativeEditor.status(e.message,true));
   $('workspace-agents').onclick = () => renderAgents().catch(e => nativeEditor.status(e.message,true));
   $('workspace-expand').onclick = () => expand().catch(e => nativeEditor.status(e.message,true));
+  // Escape exits a prototype when a host toolbar control owns focus. The SDK
+  // continues to own Escape in an open drawer; the canvas owns its own keys.
+  document.addEventListener('keydown', event => {
+    if(event.key==='Escape' && !mode && $('workspace-preview').getAttribute('aria-pressed')==='true' &&
+      event.composedPath().some(element=>element.hasAttribute?.('data-openbrush-ui'))) {
+      event.preventDefault(); nativeEditor.send({type:'op-bridge/toggle-preview'});
+    }
+  }, true);
   nativeBridge.onContext(updateExpand);
   nativeEditor.onEvent(event => {
     if(event.type==='op-bridge/ready') updateExpand();
+    if(event.type==='op-shell/preview-state') {
+      $('workspace-preview').setAttribute('aria-pressed',String(event.active));
+      $('workspace-preview').textContent=event.active?'В редактор':'Проверить';
+    }
+    if (event.type === 'op-shell/library') void openLibrary();
     if (event.type === 'op-shell/display-mode') void expand().catch(e => nativeEditor.status(e.message,true));
     if (event.type === 'op-shell/document-replaced') {
-      target = null; context.reset(); contextChanged();
+      target = null; commentDraft=null; context.reset(); contextChanged();
       $('workspace-context').textContent = 'Контекст · 0'; close();
     }
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && mode && !sending) close(); });
   return {
     contextData,
     onContextChange(changed, retry) { contextChanged = changed; retryContext = retry; },
@@ -245,17 +206,21 @@ const nativeWorkspace = (() => {
     update(current) {
       state = current;
       const switched = context.observe(current);
+      if (switched) {commentDraft=null; target=null;}
       if (switched) contextNotice = 'Открыт другой макет. Вложения предыдущего макета удалены.';
       const saving=current.autosave;
-      $('workspace-save-state').textContent = saving?.state==='error'?'Ошибка сохранения':saving?.state==='snapshot-rejected'?'Нужна синхронизация':saving?.state==='pending'?'Сохраняется…':'Сохранено';
-      $('workspace-save-state').dataset.error=String(['error','snapshot-rejected'].includes(saving?.state));
-      $('workspace-save-state').title=saving?.error || saving?.filePath || current.filePath || 'Автосохранение в папку проекта';
-      $('workspace-project').textContent = current.project?.name || 'Проект';
-      $('workspace-project').title = current.project?.projectRoot || '';
+      const failed=['error','snapshot-rejected'].includes(saving?.state);
+      $('workspace-save-state').hidden=!failed && saving?.state!=='pending';
+      $('workspace-save-state').textContent=failed?'Не сохранено':saving?.state==='pending'?'Сохраняется…':'';
+      $('workspace-save-state').dataset.error=String(failed);
+      $('workspace-save-state').title=failed?saving.error||'Проверьте синхронизацию':'';
+      $('workspace-project').textContent=current.project?.name||'Проект';
       $('workspace-context').textContent = `Контекст · ${context.attachments.length}`;
       $('workspace-context').title = 'Только явно добавленные вложения';
       $('workspace-comment').disabled = !current.selection?.count;
-      $('workspace-agents').textContent = `Агенты · ${current.agents?.agents?.length || 0}`;
+      const agentCount=current.agents?.agents?.length||0;
+      $('toolbar-agents').hidden=!agentCount; $('workspace-agents').hidden=!agentCount;
+      $('workspace-agents').textContent=`Агенты · ${agentCount}`;
       if (mode === 'context') {
         if (switched) renderContext();
         refreshContextSelection();

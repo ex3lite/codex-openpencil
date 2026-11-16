@@ -2,7 +2,7 @@
 const nativeEditor = (() => {
   let ready = false, saving = false, dirty = false, source = null, token;
   let generation = 0, revision = 0, closed = false, identity = 0;
-  let replacementBarrier = Promise.resolve(), autosaveTimer, autosaveFailed = false, rejectedSnapshot = null, restoring = false;
+  let replacementBarrier = Promise.resolve(), autosaveTimer, autosaveDeadline, autosaveFailed = false, rejectedSnapshot = null, restoring = false;
   const snapshots = new Map(), listeners = new Set();
   const element = id => document.getElementById(id);
   const value = result => result.structuredContent ?? JSON.parse(result.content.find(item => item.type === 'text').text);
@@ -33,24 +33,28 @@ const nativeEditor = (() => {
       return snapshot;
     });
   }
-  function saveDialog() {
-    element('save-path').value = source || '';
-    element('save-dialog').showModal(); element('save-path').focus();
+  function clearAutosave() {
+    clearTimeout(autosaveTimer); clearTimeout(autosaveDeadline);
+    autosaveTimer=autosaveDeadline=undefined;
   }
   function scheduleAutosave() {
     clearTimeout(autosaveTimer);
-    if (!restoring && !autosaveFailed && !rejectedSnapshot && ready && !closed) autosaveTimer = setTimeout(() => void save(), 700);
+    if (!restoring && !autosaveFailed && !rejectedSnapshot && ready && !closed) {
+      autosaveTimer=setTimeout(() => { autosaveTimer=undefined; void save(); }, 700);
+      // Continuous pointer edits must not postpone persistence indefinitely.
+      autosaveDeadline ??= setTimeout(() => { autosaveDeadline=undefined; void save(); }, 2000);
+    }
   }
-  async function save(path) {
-    if (restoring || saving || closed || autosaveFailed) return;
+  async function save() {
+    if (restoring || saving || closed || autosaveFailed || rejectedSnapshot) return;
+    clearAutosave();
     const savingIdentity = identity;
     let savingPair = { generation, revision };
     saving = true;
     try {
       const snapshot = await flush();
       savingPair = { generation: snapshot.generation, revision: snapshot.revision };
-      const result = await call(path ? 'canvas_save' : 'canvas_autosave', {
-        ...(path ? {filePath:path} : {}), docJson: snapshot.docJson });
+      const result = await call('canvas_autosave', {docJson:snapshot.docJson});
       if (identity !== savingIdentity) return;
       if (rejectedSnapshot) status('');
       rejectedSnapshot = null;
@@ -58,12 +62,11 @@ const nativeEditor = (() => {
       if (generation === snapshot.generation && revision === snapshot.revision) dirty = false;
       send({ type: 'op-bridge/save-committed', generation: snapshot.generation, revision: snapshot.revision });
       updateName();
-      if (path) status('Копия сохранена');
     } catch (error) {
       if (identity !== savingIdentity) return;
       if (error.code === 'DOCUMENT_SNAPSHOT_STALE') {
         rejectedSnapshot = savingPair;
-        status('Снимок холста устарел. Файл не изменён. Дождитесь синхронизации и сохраните снова; новое изменение запустит автосохранение.', true);
+        status('Снимок холста устарел. Файл не изменён. Нужна синхронизация холста; агент может проверить состояние и восстановить сохранение.', true);
       } else {
         autosaveFailed = true;
         status(`Автосохранение остановлено: ${error.message}. Проверьте историю и файл перед продолжением.`, true);
@@ -85,7 +88,7 @@ const nativeEditor = (() => {
       }
       generation = event.generation; revision = event.revision; dirty = Boolean(event.dirty) || dirty; if(dirty) scheduleAutosave();
     }
-    if (event.type === 'op-bridge/sync-conflict') status('Есть конфликт изменений. Сохранение остановлено до его разрешения.', true);
+    if (event.type === 'op-bridge/sync-conflict') { clearAutosave(); autosaveFailed=true; status('Есть конфликт изменений. Изменения удерживаются в редакторе до проверки агентом.', true); }
     if (['op-bridge/snapshot-result', 'op-bridge/snapshot-conflict'].includes(event.type)) {
       const pending = snapshots.get(event.requestId);
       if (pending) {
@@ -95,29 +98,24 @@ const nativeEditor = (() => {
       }
     }
     if (event.type === 'op-shell/document-replaced') {
-      identity++; source = null; dirty = true; autosaveFailed = false; rejectedSnapshot = null; clearTimeout(autosaveTimer); status('');
-      element('save-dialog').close();
+      identity++; source = null; dirty = true; autosaveFailed = false; rejectedSnapshot = null; clearAutosave(); status('');
       void replacement.previous.then(() => call('canvas_detach_source')).then(() => { replacement.resolve(); scheduleAutosave(); }).catch(error => {
         replacement.reject(error); status('Не удалось переключить документ: ' + error.message, true);
       });
     }
-    if (event.type === 'op-shell/save') { if(!autosaveFailed) void save(); }
-    if (event.type === 'op-shell/save-as') saveDialog();
+    if (['op-shell/save','op-shell/save-as','op-shell/autosave'].includes(event.type) && dirty) void save();
     for (const listener of listeners) listener(event);
   }
-  element('save-form').addEventListener('submit', event => {
-    event.preventDefault(); const path = element('save-path').value.trim();
-    if (path) { element('save-dialog').close(); void save(path); }
-  });
-  element('save-cancel').onclick = () => element('save-dialog').close();
   element('status-dismiss').onclick = () => status('');
+  document.addEventListener('visibilitychange', () => { if (document.hidden && dirty) void save(); });
+  window.addEventListener('pagehide', () => { if(dirty) void save(); });
   window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
   nativeBridge.onContext(context => {
     if (ready && ['dark', 'light'].includes(context.theme)) send({ type: 'op-bridge/theme', colorScheme: context.theme });
   });
   nativeBridge.onTeardown(async () => {
-    clearTimeout(autosaveTimer);
-    if (ready && !autosaveFailed && !rejectedSnapshot) { const snapshot=await flush(); await call('canvas_autosave',{docJson:snapshot.docJson}); }
+    clearAutosave();
+    if (dirty && ready && !autosaveFailed && !rejectedSnapshot) { const snapshot=await flush(); await call('canvas_autosave',{docJson:snapshot.docJson}); }
     closed = true;
     for (const pending of snapshots.values()) { clearTimeout(pending.timer); pending.reject(Error('Редактор закрыт')); }
     snapshots.clear();
@@ -141,8 +139,8 @@ const nativeEditor = (() => {
       });
     },
     get ready() { return ready && !closed; }, get saving() { return saving; }, get source() { return source; },
-    rebind(result) { identity++; source = result.filePath || null; dirty = false; autosaveFailed = false; rejectedSnapshot = null; clearTimeout(autosaveTimer); updateName(); status('Макет открыт в этом проекте.'); },
-    beginRestore() { restoring=true; clearTimeout(autosaveTimer); },
+    rebind(result) { identity++; source = result.filePath || null; dirty = false; autosaveFailed = false; rejectedSnapshot = null; clearAutosave(); updateName(); status('Макет открыт в этом проекте.'); },
+    beginRestore() { restoring=true; clearAutosave(); },
     cancelRestore() { restoring=false; },
     acceptRestored(result) {
       source=result.filePath; dirty=false; autosaveFailed=false; rejectedSnapshot=null; updateName();

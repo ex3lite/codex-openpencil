@@ -7,7 +7,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(fail=false){
   let listener,timerId=0,generation=1,revision=0;const timers=new Map(),calls=[],elements=new Map();
   const element=id=>{if(!elements.has(id))elements.set(id,{addEventListener(){},close(){},dataset:{},value:'',hidden:true});return elements.get(id);};
-  const context=vm.createContext({document:{getElementById:element},window:{addEventListener(){}},queueMicrotask,crypto:{randomUUID:()=>String(++timerId)},setTimeout(fn){const id=++timerId;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),
+  const context=vm.createContext({document:{getElementById:element,addEventListener(){}},window:{addEventListener(){}},queueMicrotask,crypto:{randomUUID:()=>String(++timerId)},setTimeout(fn){const id=++timerId;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),
     nativeBridge:{onContext(){},onTeardown(){},async call(name,args){calls.push({name,args});if(name==='canvas_autosave'&&fail){if(typeof fail==='function')await fail();else throw Error('external source changed');}return name==='canvas_native_request'?{_meta:{nativeHttp:{status:200}}}:{structuredContent:{filePath:'/project/Test.op'}};}},
     OpenPencilEngine:{documentName(){},selection:()=>'{"nodeIds":[]}',onEvent(fn){listener=fn;},receive(raw){const m=JSON.parse(raw);if(m.type==='op-bridge/snapshot')listener(JSON.stringify({type:'op-bridge/snapshot-result',requestId:m.requestId,docJson:'{}',generation,revision}));}}});
   vm.runInContext(source+'\nglobalThis.editor=nativeEditor;',context);
@@ -53,12 +53,12 @@ test('a rejected snapshot waits for a distinct edit before another autosave',asy
   assert.equal(f.timers.size,0);
 });
 
-test('an explicit Save can present a fresh snapshot after rejection',async()=>{
+test('legacy Save requests cannot replay a rejected mutation',async()=>{
   let attempts=0;
   const f=fixture(()=>{if(++attempts===1)throw Object.assign(Error('stale snapshot'),{code:'DOCUMENT_SNAPSHOT_STALE'});});
   await f.emit({type:'op-bridge/ready',generation:1,revision:0});await f.emit({type:'op-bridge/dirty-changed',dirty:true,generation:1,revision:2});await f.runTimers();
   await f.emit({type:'op-shell/save'});
   await tick();
-  assert.equal(attempts,2);
-  assert.equal(f.elements.get('status-message').textContent,'');
+  assert.equal(attempts,1);
+  assert.match(f.elements.get('status-message').textContent,/Файл не изменён/);
 });

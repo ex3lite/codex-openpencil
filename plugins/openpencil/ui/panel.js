@@ -1,6 +1,6 @@
 const el = id => document.getElementById(id);
 const frame = el('editor');
-let ready = false, saving = false, dirty = false, source = grant.source;
+let ready = false, saving = false, autosaveStopped = false, dirty = false, source = grant.source;
 let generation = 0, revision = 0, savedVersion = null, checkpointTimer;
 let refreshingCanvas = false;
 let connectionInterrupted = false;
@@ -67,7 +67,7 @@ async function rpc(name, args = {}) {
   if (!response.ok || value.error || value.isError) throw Object.assign(new Error(value.error || value.content?.[0]?.text || 'Не удалось выполнить действие на холсте'), { code: value.code || value.structuredContent?.code });
   return value.structuredContent;
 }
-function updateSource() { el('document-label').textContent = source || 'Без названия · Локальный документ'; el('document-label').title = source || ''; }
+function updateSource() { el('document-label').textContent = source?.split(/[\\/]/).pop() || 'Макет проекта'; }
 function flush() {
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
@@ -76,24 +76,23 @@ function flush() {
     send({ type: 'op-bridge/snapshot', purpose: 'save', requestId });
   });
 }
-async function save(path = source) {
-  if (!ready || saving) return;
-  if (!path) { el('save-dialog').showModal(); el('file-path').focus(); return; }
-  saving = true; el('save').disabled = el('save-as').disabled = true; status('Сохранение…'); clearError('save');
+async function save() {
+  if (!ready || saving || autosaveStopped || !dirty) return;
+  saving = true; status('Сохранение…'); clearError('save');
   try {
     const snapshot = await flush();
-    const result = await rpc('canvas_save', { filePath: path, docJson: snapshot.docJson });
+    const result = await rpc('canvas_autosave', {docJson:snapshot.docJson});
     source = result.filePath; savedVersion = result.version;
     // A later edit must stay dirty even when an earlier Save completes.
     if (generation === snapshot.generation && revision === snapshot.revision) dirty = false;
     send({ type: 'op-bridge/save-committed', generation: snapshot.generation, revision: snapshot.revision });
     clearError('sync'); updateSource(); status(dirty ? 'Есть новые изменения' : 'Сохранено');
-  } catch (error) { fail(error, 'save'); status('Не удалось сохранить'); }
-  finally { saving = false; el('save').disabled = el('save-as').disabled = !ready; }
+  } catch (error) { autosaveStopped=true; fail(error, 'save'); status('Автосохранение остановлено: нужна проверка агентом'); }
+  finally { saving = false; }
 }
 function checkpointSoon() {
   if (checkpointTimer) return;
-  checkpointTimer = setTimeout(() => { checkpointTimer = undefined; if (!saving && ready) rpc('canvas_checkpoint').then(() => clearError('checkpoint')).catch(error => fail(error, 'checkpoint')); }, 1000);
+  checkpointTimer = setTimeout(() => { checkpointTimer = undefined; if (!saving && ready && dirty) void save(); }, 1000);
 }
 window.addEventListener('message', event => {
   if (window.parent !== window && event.source === window.parent && event.data?.type === 'codex-canvas/theme') {
@@ -111,7 +110,7 @@ window.addEventListener('message', event => {
   if (value.type === 'op-bridge/ready') {
     if (!Number.isSafeInteger(value.generation) || !Number.isSafeInteger(value.revision)) return;
     ready = true; generation = value.generation; revision = value.revision;
-    el('loading').hidden = true; el('save').disabled = el('save-as').disabled = false;
+    el('loading').hidden = true;
     connectionInterrupted = false; clearError('connection'); restoreStatus();
     sendLocale(); sendTheme(); notifyParentReady();
     if (!launchAcknowledged && /^[A-Za-z0-9_-]{22}$/.test(browserLaunchId || '')) {
@@ -132,7 +131,7 @@ window.addEventListener('message', event => {
     if (value.type === 'op-bridge/snapshot-conflict') pending.reject(new Error('Макет изменился: сохранение остановлено. Дождитесь синхронизации и повторите.'));
     else pending.resolve(value);
   }
-  if (value.type === 'op-shell/save') void save();
+  if (['op-shell/save','op-shell/save-as','op-shell/autosave'].includes(value.type)) void save();
 });
 frame.addEventListener('load', initialize);
 frame.src = `${grant.editorOrigin}/?embed=vscode&chat=host&locale=ru&theme=${colorScheme}`;
@@ -141,11 +140,9 @@ updateSource();
 const startup = setInterval(() => { if (ready) clearInterval(startup); else initialize(); }, 1000);
 setTimeout(() => { if (!ready) { clearInterval(startup); connectionInterrupted = true; fail(new Error('Редактор ещё не подключён. Проверьте загрузку страницы и подключение плагина, затем откройте холст снова.'), 'connection'); } }, 30_000);
 el('error-dismiss').onclick = () => { for (const error of errors.values()) error.dismissed = true; renderError(); };
-el('save').onclick = () => void save();
-el('save-as').onclick = () => { el('file-path').value = source || ''; el('save-dialog').showModal(); };
-el('cancel').onclick = () => el('save-dialog').close();
-el('save-form').onsubmit = event => { event.preventDefault(); const path = el('file-path').value.trim(); if (path) { el('save-dialog').close(); void save(path); } };
 window.addEventListener('keydown', event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); } });
+document.addEventListener('visibilitychange',()=>{if(document.hidden)void save();});
+window.addEventListener('pagehide',()=>void save());
 window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
 async function refreshCanvas() {
   if (!ready || saving || refreshingCanvas || document.hidden) return;

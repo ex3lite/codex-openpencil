@@ -1,0 +1,10 @@
+import { spawnSync } from 'node:child_process';
+import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+const output = 'plugins/openpencil/ui/native-ui-sdk.js';
+const result = spawnSync('bun', ['build', 'client/native-ui-entry.js', '--target=browser', '--format=iife', '--minify', '--outfile', output], { encoding:'utf8' });
+if (result.status !== 0) throw Error(result.stderr || result.stdout);
+const body = await readFile(output);
+await writeFile(output + '.json', JSON.stringify({ sdk:'@ui-sdk/web', version:'0.1.0-beta.3', license:'Apache-2.0', source:'https://github.com/vercel-labs/ui', sha256:createHash('sha256').update(body).digest('hex') }, null, 2)+'\n');
+await writeFile('plugins/openpencil/UI-SDK-LICENSE', await readFile('node_modules/@ui-sdk/web/LICENSE'));
+console.log(result.stdout);

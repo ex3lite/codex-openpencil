@@ -51,10 +51,10 @@ test('Real connection failures remain visible and clear when the canvas reconnec
 test('Successful selection polls cannot erase failed saves or sync conflict warnings', async () => {
   const ui = await panel();
   ui.rpc(({name}) => {
-    if (name === 'canvas_save') throw new Error('Source changed outside the canvas');
+    if (name === 'canvas_autosave') throw new Error('Source changed outside the canvas');
     return {version:8,selection:selected()};
   });
-  const saving = ui.state('save()'); flush(ui); await saving;
+  const saving = ui.state('dirty=true;save()'); flush(ui); await saving;
   assert.equal(ui.element('error-message').textContent,'Source changed outside the canvas');
   await ui.state('refreshCanvas()');
   assert.equal(ui.element('error').hidden,false);

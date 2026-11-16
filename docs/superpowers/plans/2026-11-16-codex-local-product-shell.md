@@ -52,4 +52,4 @@ Files: design/setup skill references, product audit report and plugin/runtime ve
 - [x] Make ui-sdk and gesture rules the basis of generated interactive UI and design-system handoff. State the Rust canvas/DOM behavior boundary clearly.
 - [x] Remove automatic editor-browser/publication fallbacks from the default workflow. Reuse code conversion and Sites tooling only when the user asks to test/share a prototype.
 - [x] Run package checks, full plugin suite, relevant Rust tests, isolated native smoke and browser UI acceptance. Preserve the real project document and verify autosave/history after reopening.
-- [ ] Install the release, verify tool/resource discovery and installed-file hashes. Report which behavior is already active and which needs a new Codex session.
+- [x] Install the release, verify tool/resource discovery and installed-file hashes. Report which behavior is already active and which needs a new Codex session.

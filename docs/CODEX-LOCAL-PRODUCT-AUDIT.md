@@ -71,3 +71,22 @@ and browser keyboard/comment/library/preview checks are required before install.
 A protocol harness verifies the browser implementation, not actual rendering in
 the Codex desktop host. A fresh host loader verifies installed tools and resources;
 the existing chat's loaded plugin process needs a Codex restart to adopt the release.
+
+### Installed acceptance
+
+- Plugin 0.13.0; implementation commit `0594cea`.
+- Engine `239ce67934368439793b5ada8d97a0af51fcb7df`.
+- `npm run check`: pass. Plugin tests: 326 passed, zero failures.
+- Rust web-host suite and 55 related chrome tests: pass.
+- WASM: zero `env.*` imports; gzip 5,346,278 bytes, below the 6 MiB gate.
+- Isolated native smoke: 232 tools; create/read/layout/lint/PNG/save/reopen pass.
+- Isolated project: three pages, linked master/token propagation and reopen pass.
+- Browser: clipboard/arrow isolation, fixed comment target, draft/focus return,
+  drawer swipe, unified library and preview/Escape confirmation verified.
+  No console warnings/errors or account/room/standalone-template requests.
+- Codex fresh loader: 59 plugin tools, resource `ui://openbrush/native/v0.13.0.html`.
+- Installed package: all 92 source files byte-identical.
+- Original user's design SHA remained unchanged. QA used separate copies.
+- The already running Codex chat was not restarted during execution. Native
+  Codex rendering after restart remains a user-host check, distinct from the
+  verified local browser protocol harness and fresh loader.

@@ -28,7 +28,7 @@ const target = join(destination, 'bin/web-bundle');
 await cp(web, target, { recursive: true,
   filter: path => !/\.(d\.ts|opt\.wasm)$/.test(path) });
 const notice = await readFile(join(destination, 'NOTICE'), 'utf8');
-await writeFile(join(destination, 'NOTICE'), `${notice}\nRussian web localization: https://github.com/ex3lite/openpencil\nWeb source: ${revision}; stable daemon and CanvasKit preserved from d155cd0.\n`);
+await writeFile(join(destination, 'NOTICE'), `${notice}\nRussian web localization: https://github.com/ex3lite/openpencil\nWeb source: ${revision}; daemon and CanvasKit preserved from the verified base runtime.\n`);
 manifest.localization = { locale: 'ru', webSourceRevision: revision,
   repository: 'https://github.com/ex3lite/openpencil', baseRevision: manifest.openPencilRevision };
 manifest.files = {};

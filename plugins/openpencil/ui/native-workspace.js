@@ -197,7 +197,7 @@ const nativeWorkspace = (() => {
     }
     if(event.type==='op-shell/preview-state') {
       $('workspace-preview').setAttribute('aria-pressed',String(event.active));
-      $('workspace-preview').textContent=event.active?'В редактор':'Проверить';
+      $('workspace-preview').textContent=event.active?'В редактор':'Прототип';
     }
     if (event.type === 'op-shell/library') void openLibrary();
     if (event.type === 'op-shell/display-mode') void expand().catch(e => nativeEditor.status(e.message,true));

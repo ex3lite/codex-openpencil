@@ -85,6 +85,11 @@ For a new phone screen, load `get_guidelines` with `topic: "mobile"` before
 creating its root frame. Use the Rust runtime's canonical status bar; do not
 hand-draw a replacement or use emoji for system indicators.
 
+## Prototype and animation
+
+Follow the [prototype and motion contract](references/prototype-motion.md).
+Audit routes and actual resource types; preview the authored interactions.
+
 ## Image acquisition
 
 For new photos, illustrations or product imagery needed by the design, use the

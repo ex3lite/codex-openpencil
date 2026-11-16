@@ -1,3 +1,4 @@
+import {auditPrototype,prototypeAuditTool} from './prototype-audit.mjs';
 import {auditDesignSystem} from './design-system-audit.mjs';
 import {designSystemPreset} from './design-system-preset.mjs';
 import {writeReplacement,assertCurrentWriter} from './canvas-projects.mjs';
@@ -14,11 +15,13 @@ export function addDesignSystem(document,options={}) {
  next.variables={...next.variables,...preset.tokens};next.pages.push(...preset.pages);return next;
 }
 export const designSystemTools=[
+ prototypeAuditTool,
  {name:'canvas_design_system_audit',description:'Audit all project document pages for tokens, reusable masters, canonical linked instances, interaction states and safe motion. Static audit only: preview, propagation and reduced-motion checks are still required before completion.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false}},
  {name:'canvas_design_system_init',description:'Add editable foundations, shared variables, reusable buttons/field/card and a UI Kit to the active project document. Preserves existing pages. Requires observed expectedVersion; never retries or overwrites an existing system. Adapt the system to the brief and compose screens with ref instances.',inputSchema:{type:'object',properties:{expectedVersion:{type:'integer',minimum:0},accent:{type:'string',pattern:'^#[0-9A-Fa-f]{6}$'},fontFamily:{type:'string',maxLength:100}},required:['expectedVersion'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}}
 ];
 export async function designSystemOperation(controller,name,args){
  const live=await controller.session.document();
+ if(name==='canvas_prototype_audit')return {...auditPrototype(live.document),version:live.version};
  if(name==='canvas_design_system_audit')return {...auditDesignSystem(live.document),version:live.version};
  if(controller.agents?.status().agents.length)throw Error('Завершите работу агентов перед добавлением общих компонентов.');
  if(args.expectedVersion!==live.version)throw Object.assign(Error('Холст изменился. Прочитайте актуальную версию.'),{code:'VERSION_CONFLICT'});

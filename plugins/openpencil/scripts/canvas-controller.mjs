@@ -200,7 +200,7 @@ export class CanvasController {
     if(name==='canvas_community_catalog_status')return toolResult(await dispatchCatalogTool(this,name,args));
     if (!this.session) throw new Error('Open a managed canvas with canvas_open_browser or open_canvas first.');
     if(this.projectSwitchUncertain && !['canvas_panel_state','canvas_status','canvas_selection','canvas_documents','canvas_comments','canvas_agents','canvas_history','canvas_history_status'].includes(name)) throw Error('Переключение макета не подтверждено. Изменения остановлены; откройте сохранённый проект заново.');
-    if(name==='canvas_design_system_audit'||name==='canvas_design_system_init') return toolResult(await designSystemOperation(this,name,args));
+    if(name==='canvas_design_system_audit'||name==='canvas_design_system_init'||name==='canvas_prototype_audit') return toolResult(await designSystemOperation(this,name,args));
     if(name==='canvas_autosave') {
       const result=await this.persistence.flush(args);
       this.fonts?.schedule(args.docJson?JSON.parse(args.docJson):undefined);
@@ -249,7 +249,7 @@ export class CanvasController {
     if (name === 'canvas_codegen_cancel') return toolResult(cancelCodegen(this, args));
     if (name === 'canvas_codegen_poll') return toolResult(pollCodegen(this, args));
     const current = await readCanvasSelection(this.session);
-    const state = { pluginVersion:'0.13.1', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
+    const state = { pluginVersion:'0.13.2', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
       project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,autosave:this.persistence?.status(),agents:this.agents?.status(),comments:this.comments?await this.comments.list():[] };
     return name==='canvas_panel_state' ? {content:[],_meta:{panelState:state}} : toolResult(state);
   }
@@ -314,7 +314,7 @@ export class CanvasController {
       }
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.13.1' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.13.2' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }

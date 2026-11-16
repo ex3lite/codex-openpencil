@@ -12,3 +12,5 @@ workflows. The Rust editor and MCP tool implementations belong to
 - Never retry a failed mutation automatically: a timeout may follow an applied edit.
 - Keep individual source files under 800 lines. Use English source comments.
 - Conventional commits; new feature branches use `codex/`.
+
+- Every UI project starts with editable foundations, shared semantic tokens and a UI Kit. Product controls must be linked instances with previewed interaction states, keyboard focus and reduced-motion behavior. Run the static design-system audit plus actual visual/runtime verification before completion.

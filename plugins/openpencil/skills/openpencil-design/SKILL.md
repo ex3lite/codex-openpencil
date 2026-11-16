@@ -35,6 +35,14 @@ the native app unless the user requested that or a concrete host limitation
 has been explained. Resource retrieval alone does not prove visible rendering.
 Do not open a new managed document merely to inspect an existing selection.
 
+## Required design system
+
+Every UI project must include editable foundations and a UI Kit with shared
+variables, linked components, interaction states and motion. Follow the
+[design-system contract](references/design-system.md) before building screens and
+before completion. New documents include these system pages automatically; they
+are separate from the number of product screens requested in the brief.
+
 ## Establish the output
 
 For a new design, resolve **one page or multiple pages** explicitly if the brief

@@ -10,10 +10,10 @@ const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 // Native HTTP bodies can already be 32 MiB before base64 encoding in _meta.
 const MAX_RESPONSE_BYTES = 48 * 1024 * 1024;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const READ_TOOLS = new Set(['open_canvas', 'canvas_status', 'canvas_selection', 'canvas_documents',
+const READ_TOOLS = new Set(['open_canvas', 'canvas_status', 'canvas_selection', 'canvas_documents', 'canvas_design_system_audit',
   'canvas_comments', 'canvas_agents', 'canvas_codegen_poll', 'canvas_history', 'canvas_history_status', 'canvas_history', 'canvas_history_status', 'canvas_community_search', 'canvas_community_file', 'canvas_fonts_status', 'canvas_fonts_library','canvas_icon_pack_list','canvas_icon_pack_search','canvas_icon_pack_check','canvas_community_catalog_status','canvas_community_catalog_search','canvas_community_catalog_get','canvas_community_catalog_check','canvas_community_catalog_cover']);
 const APP_TOOLS = new Set([...READ_TOOLS, 'canvas_transfer', 'canvas_native_request', 'canvas_document_open', 'canvas_document_import',
-  'canvas_comment_create', 'canvas_comment_update', 'canvas_detach_source', 'canvas_checkpoint', 'canvas_save',
+  'canvas_design_system_init', 'canvas_comment_create', 'canvas_comment_update', 'canvas_detach_source', 'canvas_checkpoint', 'canvas_save',
   'canvas_codegen_prepare', 'canvas_codegen_cancel', 'canvas_autosave', 'canvas_history_restore', 'canvas_autosave', 'canvas_history_restore', 'canvas_community_import', 'canvas_community_settings', 'canvas_fonts_prepare','canvas_icon_pack_acquire','canvas_icon_pack_select','canvas_icon_pack_update','canvas_community_catalog_acquire']);
 const fail = (code, message, uncertain = false) => Object.assign(new Error(message), { code, ...(uncertain && { uncertain: true }) });
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);

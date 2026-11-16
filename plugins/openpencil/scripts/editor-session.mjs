@@ -1,3 +1,4 @@
+import { newDesignDocument } from './design-system-preset.mjs';
 import { nativeDocumentHttp } from './native-document-http.mjs';
 import { MAX_DOCUMENT_BYTES, DOCUMENT_ENVELOPE_BYTES } from './document-limits.mjs';
 import { spawn } from 'node:child_process';
@@ -77,7 +78,7 @@ export class EditorSession {
     await mkdir(join(stateRoot(), 'sessions'), { recursive: true, mode: 0o700 });
     const dir = await mkdtemp(join(stateRoot(), 'sessions', 'canvas-'));
     const draft = join(dir, 'recovery.op');
-    const initial = filePath ? await sourceBytes(filePath) : Buffer.from('{"version":"0.8.5","children":[]}\n');
+    const initial = filePath ? await sourceBytes(filePath) : Buffer.from(JSON.stringify(newDesignDocument())+'\n');
     await writeFile(draft, initial, { mode: 0o600 });
     const config = join(stateRoot(), 'settings', `${runtime.version}-${sha256(runtime.root).slice(0,12)}`);
     await mkdir(config, { recursive: true, mode: 0o700 });
@@ -126,14 +127,19 @@ export class EditorSession {
     }
   }
 
-  async selectionDocument(pageIndex) {
+  async selectionVersion() {
     this.assertLive();
     const response = await fetch(`http://127.0.0.1:${this.port}/api/mcp/version`, { signal: AbortSignal.timeout(5_000) });
     if (!response.ok) throw new Error('Canvas version read failed.');
     const value = await response.json();
     if (!Number.isSafeInteger(value.version)) throw new Error('Canvas version is invalid.');
+    return value.version;
+  }
+
+  async selectionDocument(pageIndex) {
+    const version = await this.selectionVersion();
     // Selection polling must not repeatedly transfer embedded document images.
-    if (this.selectionSnapshot?.version !== value.version || this.selectionSnapshot.activePageIndex !== pageIndex) {
+    if (this.selectionSnapshot?.version !== version || this.selectionSnapshot.activePageIndex !== pageIndex) {
       this.selectionSnapshot = await this.document();
     }
     return this.selectionSnapshot;

@@ -24,6 +24,7 @@ import { iconPackTools, dispatchIconPackTool } from './icon-packs.mjs';
 import { catalogTools, dispatchCatalogTool } from './community-catalog.mjs';
 import { prepareCanvasBrowser, browserLaunchStatus } from './browser-launch.mjs';
 import { prepareCodegen, completeCodegen, pollCodegen, cancelCodegen, codegenSummary, frameworks } from './canvas-codegen.mjs';
+import { auditDesignSystem, designSystemTools, designSystemOperation } from './design-system.mjs';
 
 export const CANVAS_URI = NATIVE_URI;
 const schema = properties => ({ type: 'object', properties, additionalProperties: false });
@@ -39,6 +40,7 @@ export const canvasTools = [
   ...iconPackTools,
   ...catalogTools,
   ...workspaceTools,
+  ...designSystemTools,
   { name: 'canvas_detach_source', description: 'App-only: detach the previous save destination after a successful New/Open/import. Does not write or delete any file.',
     inputSchema: schema({}), annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
   transferTool,
@@ -197,6 +199,7 @@ export class CanvasController {
     if(name==='canvas_community_catalog_status')return toolResult(await dispatchCatalogTool(this,name,args));
     if (!this.session) throw new Error('Open a managed canvas with canvas_open_browser or open_canvas first.');
     if(this.projectSwitchUncertain && !['canvas_status','canvas_selection','canvas_documents','canvas_comments','canvas_agents','canvas_history','canvas_history_status'].includes(name)) throw Error('Переключение макета не подтверждено. Изменения остановлены; откройте сохранённый проект заново.');
+    if(name==='canvas_design_system_audit'||name==='canvas_design_system_init') return toolResult(await designSystemOperation(this,name,args));
     if(name==='canvas_autosave') {
       const result=await this.persistence.flush(args);
       this.fonts?.schedule(args.docJson?JSON.parse(args.docJson):undefined);
@@ -298,6 +301,10 @@ export class CanvasController {
       }
       if(!this.session && !this.options.port && message.method==='tools/call') throw Error('Сначала откройте холст с open_canvas(projectRoot). Глобальный случайный документ не выбран.');
       if(this.session&&message.method==='tools/call'&&['get_screenshot','export_nodes'].includes(message.params.name))await this.fonts?.readyForPreview();
+      if(this.session&&message.method==='tools/call'&&message.params.name==='finalize_design') {
+        const audit=auditDesignSystem((await this.session.document()).document);
+        if(!audit.complete)return reply({isError:true,content:[{type:'text',text:JSON.stringify(audit)}],structuredContent:{code:'DESIGN_SYSTEM_INCOMPLETE',...audit}});
+      }
       const upstream = this.session ? await this.session.forward(message) : await forward(message, this.options);
       if (this.session && message.method === 'tools/call' && !upstream?.error && !upstream?.result?.isError) {
         this.persistence?.changed();
@@ -305,7 +312,7 @@ export class CanvasController {
       }
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.11.1' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.12.0' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }

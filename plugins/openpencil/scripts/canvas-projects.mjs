@@ -1,3 +1,4 @@
+import { newDesignDocument } from './design-system-preset.mjs';
 import { nativeDocumentHttp } from './native-document-http.mjs';
 import { MAX_DOCUMENT_BYTES, DOCUMENT_ENVELOPE_BYTES } from './document-limits.mjs';
 import { randomUUID } from 'node:crypto';
@@ -9,7 +10,7 @@ import { transportDocument, snapshotMatches } from './document-format.mjs';
 import { acquireProjectWriter } from './project-writer-lease.mjs';
 
 const attached = Symbol('project-session');
-const emptyDocument = () => ({ version: '0.8.5', children: [] });
+const emptyDocument = newDesignDocument;
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const unknownSwitch = () => fail('PROJECT_SWITCH_UNCERTAIN', 'Редактор не подтвердил переключение. Откройте документ заново и проверьте холст перед следующими изменениями.');
 
@@ -55,7 +56,7 @@ async function releaseWriter(controller, documentId) {
   await lease.release(); controller.projectWriterLeases.delete(documentId);
 }
 
-async function assertCurrentWriter(controller) {
+export async function assertCurrentWriter(controller) {
   const lease = controller.projectWriterLeases?.get(controller.documentId);
   if (!lease) throw fail('PROJECT_WRITER_REQUIRED', 'Документ не закреплён за этим сеансом. Откройте его заново.');
   await lease.assertOwned();

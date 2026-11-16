@@ -1,6 +1,6 @@
 {
   "name": "@zseven-w/codex-openpencil",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "private": true,
   "description": "OpenPencil design workflows and a local MCP bridge for Codex",
   "type": "module",

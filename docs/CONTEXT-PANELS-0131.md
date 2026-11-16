@@ -30,3 +30,9 @@ A comment was submitted through the native editor, read through the model tool, 
 The Layers action hid the tree in the native accessibility snapshot. The old toolbar lacked a direct attach action and an independent inspector close button. A later explicit status read returned `SELECTION_STALE`; that observation is recorded rather than claimed as successful selection verification.
 
 Native MCP App screenshot capture timed out, so native evidence consists of DOM snapshots and tool/file/history results. A browser harness screenshot is not native Codex proof. The new 0.13.1 controls require a freshly loaded plugin resource before live acceptance can be claimed.
+
+## After restart: 0.13.1 acceptance
+
+The current chat's `canvas_status` reported `pluginVersion: 0.13.1`. Reopening the same test document retained all three subagent edits, immutable history and the resolved comment. The original product file still matched its initial SHA-256.
+
+Computer use was unavailable after the restart. The user performed and confirmed all three native UI checks: ordinary selection keeps context count at zero and explicit attach changes it to one; the Layers panel hides and reopens; the inspector close button preserves selection. This is user-confirmed native UI acceptance, not an agent-operated screenshot check.

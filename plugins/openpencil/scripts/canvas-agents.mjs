@@ -109,7 +109,7 @@ export class CanvasAgents {
   publicLease(lease, includeId = true) {
     return { canvasId: this.canvasId, ...(includeId && { leaseId: lease.leaseId }), agentId: lease.agentId,
       name: lease.name, color: lease.color, pageId: lease.pageId, rootIds: [...lease.rootIds],
-      expiresAt: lease.expiresAt, state: lease.uncertain ? 'uncertain' : lease.inFlight ? 'writing' : 'ready' };
+      expiresAt: lease.expiresAt, activity:lease.activity||'Область назначена', state: lease.uncertain ? 'uncertain' : lease.inFlight ? 'writing' : 'ready' };
   }
   assertRoots(lease, index) {
     if (lease.rootIds.some(id => index.get(id)?.pageId !== lease.pageId)) throw fail('SCOPE_STALE', 'An assigned root was deleted or moved to another page. Ask the owner to assign new roots.');
@@ -146,7 +146,7 @@ export class CanvasAgents {
     return this.enqueue(async () => {
       const lease = this.requireLease(leaseId), live = await this.session.document(), index = treeIndex(live.document);
       this.assertRoots(lease, index);
-      lease.uncertain = false;
+      lease.uncertain = false; lease.activity='Изучает макет'; lease.expiresAt=this.now()+lease.ttlMs;
       return { ...this.publicLease(lease), version: live.version, subtrees: lease.rootIds.map(id => liveDocument({ children: [index.get(id).node], images: live.document.images }).children[0]) };
     });
   }
@@ -174,7 +174,7 @@ export class CanvasAgents {
         !isDeepStrictEqual(entry.node, before.get(id)?.node)).map(([id]) => id);
       if (!changed.length && isDeepStrictEqual(document, diskDocument(live))) return { applied: false, version: live.version, ...this.publicLease(lease) };
       this.requireLease(leaseId);
-      lease.inFlight = true;
+      lease.inFlight = true; lease.activity='Изменяет макет';
       let result;
       try { result = await this.writeDocument(document, expectedVersion); }
       catch (error) {
@@ -183,6 +183,7 @@ export class CanvasAgents {
         }
         throw error;
       } finally { lease.inFlight = false; }
+      lease.activity='Изменения внесены';
       this.advanceEpoch();
       for (const id of lease.reveals.keys()) if (!after.has(id)) lease.reveals.delete(id);
       changed.forEach((id, i) => lease.reveals.set(id, this.now() + i * 160));
@@ -194,6 +195,17 @@ export class CanvasAgents {
       }
       return { applied: true, version: result.version, changedNodeIds: changed, ...this.publicLease(lease),
         recoverySaved: typeof this.session.checkpoint === 'function' && !recoveryError, ...(recoveryError && { recoveryError }) };
+    });
+  }
+
+  focus({leaseId,nodeIds}={}) {
+    return this.enqueue(async()=>{
+      const lease=this.requireLease(leaseId),live=await this.session.document(),index=treeIndex(live.document);
+      this.assertRoots(lease,index);
+      if(!Array.isArray(nodeIds)||!nodeIds.length||nodeIds.length>100||nodeIds.some(id=>!identifier(id)||!index.has(id)||!contained(index,id,lease.rootIds)))throw fail('SCOPE_CONFLICT','Focus must stay inside the assigned roots.');
+      this.advanceEpoch();lease.reveals=new Map(nodeIds.map(id=>[id,0]));
+      lease.activity='Работает с элементами';lease.expiresAt=this.now()+lease.ttlMs;
+      return this.publicLease(lease);
     });
   }
 
@@ -228,7 +240,7 @@ export class CanvasAgents {
   }
 
   dispatch(action, args) {
-    if (!['read', 'apply', 'renew', 'release', 'inspect'].includes(action)) throw fail('UNSUPPORTED_ACTION', 'The shared agent connection only accepts assigned-scope operations.');
+    if (!['read', 'apply', 'renew', 'release', 'inspect', 'focus'].includes(action)) throw fail('UNSUPPORTED_ACTION', 'The shared agent connection only accepts assigned-scope operations.');
     return this[action](args);
   }
 }

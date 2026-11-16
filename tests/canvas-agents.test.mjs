@@ -256,3 +256,13 @@ test('native CAS sends one request with baseVersion and never retries rejected m
   assert.equal(requests[0].body.activePageIndex, 1);
   assert.equal(requests[0].body.preserveAuthoredGeometry, true);
 });
+
+test('child focus moves only its own cursor without editing the document',async()=>{
+ const f=fixture(),a=await f.acquire(0),b=await f.acquire(1),before=f.agents.relay();
+ await f.agents.dispatch('focus',{leaseId:a.leaseId,nodeIds:['text-0']});
+ const after=f.agents.relay();assert(after.epoch>before.epoch);
+ assert(after.nodes.some(n=>n.id==='text-0'&&n.name===a.name));
+ assert(after.nodes.some(n=>n.id==='root-1'&&n.name===b.name));
+ await assert.rejects(f.agents.focus({leaseId:a.leaseId,nodeIds:['text-1']}),{code:'SCOPE_CONFLICT'});
+ assert.equal(f.writes.length,0);assert.equal(f.live().version,0);
+});

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { resolveRuntime, sha256 } from './editor-runtime.mjs';
 
-export const NATIVE_URI='ui://openbrush/native/v0.13.2.html';
+export const NATIVE_URI='ui://openbrush/native/v0.13.3.html';
 const READ=new Set(['/api/mcp/document','/api/mcp/version','/api/mcp/server','/api/mcp/selection','/api/mcp/indicators']);
 const WRITE=new Set(['/api/mcp/document','/api/mcp/selection','/api/mcp/sync-reset']);
 export function nativeRoute(path,method='GET') {
@@ -48,7 +48,10 @@ export async function nativeRequest(controller,args) {
   }
  }
  let bytes=Buffer.concat(parts);const type=response.headers.get('content-type')||'application/octet-stream';
- if(method==='GET'&&path==='/api/mcp/indicators'&&response.ok&&controller.agents) bytes=Buffer.from(JSON.stringify(controller.agents.relay(JSON.parse(bytes.toString('utf8')))));
+ if(method==='GET'&&path==='/api/mcp/indicators'&&response.ok&&controller.agents) {
+  const relay=controller.agents.relay(JSON.parse(bytes.toString('utf8')));
+  bytes=Buffer.from(JSON.stringify(controller.presence?controller.presence.relay(relay):relay));
+ }
  return {content:[{type:'text',text:JSON.stringify({status:response.status,bytes:bytes.length})}],_meta:{nativeHttp:{status:response.status,type,body:bytes.toString('base64')}}};
 }
 export function embedNativeScript(template, script) {

@@ -176,6 +176,17 @@ completion.
   `batch_get`: a repaired tree may have new node IDs. Use those current IDs for
   layout inspection, screenshots and subsequent edits.
 
+## Visible agent activity
+
+Native targeted read/edit tools automatically publish the main **Codex** cursor.
+Explicit node IDs anchor it to real layers; untargeted batches show neutral
+viewport presence, never a guessed element. Routine panel polling does not start
+an agent cursor. After a native tool finishes, activity expires after 15 seconds.
+For longer inspection or direct canonical document updates, call `canvas_activity`
+with `action: "focus"`, exact `pageId`, `nodeIds` and a short truthful `activity`.
+Refresh it during real work (two-minute expiry), and call `action: "clear"` when
+finished. Never keep a decorative cursor or invent agents to imply work.
+
 ## Multiple Codex agents on one canvas
 
 Use Codex collaboration tools for delegation; never call the editor's builtin
@@ -194,7 +205,9 @@ Use Codex collaboration tools for delegation; never call the editor's builtin
    The broker connects to the parent, even across separate MCP processes.
 4. On VERSION_CONFLICT explicitly read, compare and rebase. On an uncertain
    write read before deciding; never blindly retry. Renew a long assignment,
-   release when complete. The original editor renders each agent's color/cursor.
+   release when complete. Use `canvas_agent(action: "focus", nodeIds: [...])` to
+   move the cursor within the assigned subtree during inspection. The original
+   editor renders each agent's color/cursor.
 5. Parent inspects all results, renders affected roots and saves the project.
    Leases are exclusive scopes, not permission to overwrite unrelated work.
    `canvas_agents` reports actual active assignments, not model execution status.

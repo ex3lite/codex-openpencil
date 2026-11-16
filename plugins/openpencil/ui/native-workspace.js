@@ -143,8 +143,9 @@ const nativeWorkspace = (() => {
   async function renderAgents() {
     const activity = await nativeEditor.call('canvas_agents'); show('agents', 'Агенты на холсте');
     drawer.append(make('p', 'До 10 агентов Codex. У каждого — своё имя, цвет и область работы. Назначить задачи можно в этом чате.'));
-    if (!activity.agents?.length) drawer.append(make('p', 'Сейчас никто не редактирует макет.'));
-    for (const agent of activity.agents || []) {
+    const participants=[...(activity.parent?[activity.parent]:[]),...(activity.agents||[])];
+    if (!participants.length) drawer.append(make('p', 'Сейчас никто не редактирует макет.'));
+    for (const agent of participants) {
       const item = make('article', null, 'item'); const name = make('strong', agent.name); name.style.color = agent.color;
       item.append(name, make('small', agent.rootIds.join(', ')), make('p', agent.activity || 'Работает с выделенной областью')); drawer.append(item);
     }
@@ -232,7 +233,7 @@ const nativeWorkspace = (() => {
       $('workspace-context').title = 'Только явно добавленные вложения';
       $('workspace-attach').disabled=!current.selection?.count || !nativeBridge.capabilities.updateModelContext;
       $('workspace-comment').disabled = !current.selection?.count;
-      const agentCount=current.agents?.agents?.length||0;
+      const agentCount=(current.agents?.agents?.length||0)+(current.agents?.parent?1:0);
       $('toolbar-agents').hidden=!agentCount; $('workspace-agents').hidden=!agentCount;
       $('workspace-agents').textContent=`Агенты · ${agentCount}`;
       if(mode==='comments' && JSON.stringify(current.comments||[])!==commentsKey)paintComments(current.comments||[]);

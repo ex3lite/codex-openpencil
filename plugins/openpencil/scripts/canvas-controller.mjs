@@ -1,3 +1,4 @@
+import { CanvasPresence, presenceTool } from './canvas-presence.mjs';
 import { dispatchTransfer, consumeTransfer, closeTransfers, transferTool } from './canvas-transfer.mjs';
 import { NATIVE_URI, nativeHtml, nativeRequest, nativeTools } from './native-canvas.mjs';
 import { readFile } from 'node:fs/promises';
@@ -40,6 +41,7 @@ export const canvasTools = [
   ...iconPackTools,
   ...catalogTools,
   ...workspaceTools,
+  presenceTool,
   ...designSystemTools,
   { name: 'canvas_detach_source', description: 'App-only: detach the previous save destination after a successful New/Open/import. Does not write or delete any file.',
     inputSchema: schema({}), annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
@@ -152,6 +154,7 @@ export class CanvasController {
     await this.quiesceDocumentAgents();
     this.codegenJob=null;
     this.agents=new CanvasAgents({session:this.session});
+    this.presence=new CanvasPresence({session:this.session});
     const agents=this.agents;
     this.agentBroker=await startCanvasAgentBroker(agents,{projectRoot:this.project.projectRoot,
       dispatch:(action,args)=>this.enqueue(async()=>{const result=await agents.dispatch(action,args);if(action==='apply')this.fonts?.schedule();return result;})});
@@ -160,7 +163,9 @@ export class CanvasController {
     this.fonts ||= new CanvasFonts(this);
     this.fonts.attach();
   }
+  agentStatus(){return {...this.agents?.status(),parent:this.presence?.status()||null};}
   async quiesceDocumentAgents() {
+    this.presence?.clear();
     if(this.agentBroker) {await this.agentBroker.close();this.agentBroker=null;}
     if(this.agents) {await this.agents.queue;this.agents.leases.clear();}
   }
@@ -227,7 +232,12 @@ export class CanvasController {
     if(name==='canvas_comment_create') return toolResult(await this.comments.create(args));
     if(name==='canvas_comments') return toolResult(await this.comments.list());
     if(name==='canvas_comment_update') return toolResult(await this.comments.update(args));
-    if(name==='canvas_agents') return toolResult(this.agents.status());
+    if(name==='canvas_activity') {
+      if(args.action==='clear')return toolResult(this.presence.clear());
+      if(args.action!=='focus')throw Error('Unknown canvas activity action');
+      return toolResult(await this.presence.focus(args));
+    }
+    if(name==='canvas_agents') return toolResult(this.agentStatus());
     if(name==='canvas_agent_assign') return toolResult({...await this.agents.acquire(args),projectRoot:this.project.projectRoot});
     if (name === 'canvas_prepare_browser') return toolResult(prepareCanvasBrowser(this, args));
     if (name === 'canvas_launch_status') return toolResult(browserLaunchStatus(this, args));
@@ -249,8 +259,8 @@ export class CanvasController {
     if (name === 'canvas_codegen_cancel') return toolResult(cancelCodegen(this, args));
     if (name === 'canvas_codegen_poll') return toolResult(pollCodegen(this, args));
     const current = await readCanvasSelection(this.session);
-    const state = { pluginVersion:'0.13.2', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
-      project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,autosave:this.persistence?.status(),agents:this.agents?.status(),comments:this.comments?await this.comments.list():[] };
+    const state = { pluginVersion:'0.13.3', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
+      project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,autosave:this.persistence?.status(),agents:this.agentStatus(),comments:this.comments?await this.comments.list():[] };
     return name==='canvas_panel_state' ? {content:[],_meta:{panelState:state}} : toolResult(state);
   }
   async restoreHistory({ id, docJson } = {}) {
@@ -307,14 +317,20 @@ export class CanvasController {
         const audit=auditDesignSystem((await this.session.document()).document);
         if(!audit.complete)return reply({isError:true,content:[{type:'text',text:JSON.stringify(audit)}],structuredContent:{code:'DESIGN_SYSTEM_INCOMPLETE',...audit}});
       }
-      const upstream = this.session ? await this.session.forward(message) : await forward(message, this.options);
+      let activity=false;
+      if(this.presence && message.method==='tools/call') {
+        try {activity=await this.presence.nativeStart(message.params.name,message.params.arguments||{});} catch { /* Presence cannot block a document operation. */ }
+      }
+      let upstream;
+      try {upstream = this.session ? await this.session.forward(message) : await forward(message, this.options);}
+      finally {if(activity)this.presence.finish();}
       if (this.session && message.method === 'tools/call' && !upstream?.error && !upstream?.result?.isError) {
         this.persistence?.changed();
         if(/^(?:batch_design|insert_|update_node|set_node_(?:text|font))/.test(message.params.name))this.fonts?.schedule();
       }
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.13.2' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.13.3' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }

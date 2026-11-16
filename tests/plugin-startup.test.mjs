@@ -49,7 +49,7 @@ import { appendFileSync } from 'node:fs';
 for await (const line of createInterface({input:process.stdin})) {
  const q=JSON.parse(line); appendFileSync(process.env.CALLS,q.method+'\\n');
  if(!q.id) continue;
- const controls=Object.fromEntries(['open_canvas','canvas_open_browser','canvas_prepare_browser','canvas_launch_status','canvas_status','canvas_selection','canvas_import_image','canvas_save','canvas_codegen_status','canvas_codegen_complete','canvas_prototype_audit'].map(n=>[n,{}]));
+ const controls=Object.fromEntries(['open_canvas','canvas_open_browser','canvas_prepare_browser','canvas_launch_status','canvas_status','canvas_selection','canvas_import_image','canvas_save','canvas_codegen_status','canvas_codegen_complete','canvas_prototype_audit','canvas_activity'].map(n=>[n,{}]));
  if(process.env.CASE==='old-version') delete controls.canvas_import_image;
  if(process.env.CASE==='old-launcher') delete controls.canvas_prepare_browser;
  if(process.env.CASE==='old-prototype') delete controls.canvas_prototype_audit;
@@ -61,7 +61,7 @@ for await (const line of createInterface({input:process.stdin})) {
   const options = { command: { binary: process.execPath, prefix: [fixture] }, env: { ...process.env, CALLS: calls }, timeout: 3000 };
   const status = await verifyPluginHost(options);
   assert.equal(status.ok, true);
-  assert.equal(status.toolCount, 11);
+  assert.equal(status.toolCount, 12);
   assert.deepEqual((await readFile(calls, 'utf8')).trim().split('\n'), ['initialize', 'initialized', 'mcpServerStatus/list']);
   for (const [scenario, error] of [['missing', /did not load/], ['foreign', /another source/], ['incomplete', /incomplete/], ['old-version', /incomplete/], ['old-launcher', /incomplete/], ['old-prototype', /incomplete/], ['failed', /Node executable missing/]]) {
     await assert.rejects(verifyPluginHost({ ...options, env: { ...options.env, CASE: scenario } }), error);

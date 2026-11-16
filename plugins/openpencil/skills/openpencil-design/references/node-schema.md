@@ -206,3 +206,14 @@ alone does not establish phone-screen intent.
 | Landing page | 1200 | 0 (auto) |
 | Mobile screen | 375 | 812 |
 | Dashboard | 1200 | 0 (auto) |
+
+## Button label alignment
+
+Use the button's horizontal/vertical layout with `alignItems: "center"`,
+`justifyContent: "center"` and symmetric padding. Let a one-line label use
+`width: "fill_container"`, `height: "fit_content"`, `textGrowth: "auto"` and
+`textAlign: "center"`. Keep its authored font size. A fixed 24px label box
+for a 17px font centers the box while its line paints at the top; unnecessary
+wrap tolerance must never determine horizontal alignment. Do not add manual
+x/y corrections to labels inside flow containers. Inspect the button at 100%
+after font loading and verify the text remains centered when the label changes.

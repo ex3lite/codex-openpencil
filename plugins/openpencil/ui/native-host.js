@@ -69,7 +69,7 @@ const nativeBridge = (() => {
     async init() {
       if (initialized) return initialized;
       if (typeof OP_PREVIEW !== 'undefined') return { hostCapabilities: {}, hostContext: {} };
-      initialized = await request('ui/initialize', { appInfo: { name: 'OpenBrush', version: '0.11.0' },
+      initialized = await request('ui/initialize', { appInfo: { name: 'OpenBrush', version: '0.11.1' },
         appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] }, protocolVersion: '2026-01-26' });
       capabilities = initialized.hostCapabilities || {};
       context = { ...initialized.hostContext, ...context };

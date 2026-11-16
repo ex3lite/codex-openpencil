@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { resolveRuntime, sha256 } from './editor-runtime.mjs';
 
-export const NATIVE_URI='ui://openbrush/native/v0.11.0.html';
+export const NATIVE_URI='ui://openbrush/native/v0.11.1.html';
 const READ=new Set(['/api/mcp/document','/api/mcp/version','/api/mcp/server','/api/mcp/selection','/api/mcp/indicators']);
 const WRITE=new Set(['/api/mcp/document','/api/mcp/selection','/api/mcp/sync-reset']);
 export function nativeRoute(path,method='GET') {

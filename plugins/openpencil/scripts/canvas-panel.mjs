@@ -3,15 +3,25 @@ import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { MAX_BYTES } from './transport.mjs';
 
-export async function panelHtml(grant) {
+let assets;
+async function panelAssets() {
+  if (assets) return assets;
   const root = new URL('../ui/', import.meta.url);
-  const [html, css, panelJs, selectionJs, codegenJs] = await Promise.all(['panel.html', 'panel.css', 'panel.js', 'selection.js', 'codegen.js'].map(name => readFile(new URL(name, root), 'utf8')));
+  // Pin the installed UI while the owning process is alive. A plugin update
+  // can remove its old cache before the user first opens an existing canvas.
+  assets = await Promise.all(['panel.html', 'panel.css', 'panel.js', 'selection.js', 'codegen.js'].map(name => readFile(new URL(name, root), 'utf8')));
+  return assets;
+}
+
+export async function panelHtml(grant) {
+  const [html, css, panelJs, selectionJs, codegenJs] = await panelAssets();
   const js = panelJs + '\n' + selectionJs + '\n' + codegenJs;
   const json = JSON.stringify(grant).replace(/</g, '\\u003c');
   return html.replace('/* PANEL_CSS */', css).replace('/* PANEL_GRANT */', json).replace('/* PANEL_JS */', js);
 }
 
 export async function startPanel(controller) {
+  await panelAssets();
   const capability = randomBytes(32).toString('base64url');
   let origin;
   const route = `/canvas/${capability}`;

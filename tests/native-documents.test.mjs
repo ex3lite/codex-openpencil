@@ -6,7 +6,7 @@ const source=await readFile(new URL('../plugins/openpencil/ui/native-documents.j
 function fixture(fail=false){
  const elements=[],calls=[];let closed=0;
  const make=(tag,text='',className='')=>{const n={tag,textContent:text,className,children:[],dataset:{},value:'',append(...ns){this.children.push(...ns);},replaceChildren(...ns){this.children=ns;},contains(n){return this.children.includes(n);},setAttribute(){}};elements.push(n);return n;};
- const drawer=make('div'),ui={make,drawer,show(){drawer.replaceChildren();},close(){closed++;},button(text,action){const n=make('button',text);n.onclick=action;return n;}};
+ const drawer=make('div'),ui={make,drawer,describe(){},close(){closed++;},button(text,action){const n=make('button',text);n.onclick=action;return n;}};
  const sandbox=vm.createContext({nativeEditor:{async call(name){calls.push(name);return {project:{name:'This project'},documentId:'a',documents:[{id:'a',name:'Current',status:'available'},{id:'b',name:'UI Kit',status:'available'},{id:'c',name:'Missing',status:'missing'}]};},async switchDocument(id){calls.push(id);if(fail)throw Error('Snapshot stale');}}});
  vm.runInContext(source+';globalThis.docs=nativeDocuments;',sandbox);
  return {calls,elements,drawer,closed:()=>closed,open:()=>sandbox.docs.open(ui)};

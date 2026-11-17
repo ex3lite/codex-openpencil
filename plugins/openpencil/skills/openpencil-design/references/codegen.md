@@ -21,20 +21,24 @@ reminders alone never authorize implementation.
    Reuse image assets from the design; export required local assets into the project.
    For a chat-only conversion without a panel request, call `codegen_export` with
    the explicitly requested framework, page and node IDs.
-4. Implement and run relevant checks. Use ui-sdk behavior primitives with the
-   project's framework and semantic design tokens; use the installed gestures
-   skill for pointer tracking, cancellation and reduced motion. When the user
-   asks to test the mockup, open a local browser preview and compare it with the
-   native design. Publish through ChatGPT Sites only when sharing is requested.
-   Report any untested platform or unavailable preview. Do not change the `.op`
-   design as a side effect of implementation.
-5. For a panel request, call `canvas_codegen_complete` with its `requestId` and the
+4. Use the selected OpenBrush frame as the implementation reference. Inspect the
+   resolved bounds, spacing, tokens, fonts, vector assets and shared component
+   states. Record the viewport and the layer IDs for each screen and state.
+   Keep the reference image and these measurements available while implementing.
+   Use ui-sdk behavior primitives with the project's semantic design tokens.
+5. Render the working implementation at the authored viewport. Compare it with
+   the native OpenBrush render, including panel placement, spacing, text and
+   states. Exercise the controls, keyboard focus and reduced motion with real
+   data. Fix visible differences or record the exact host constraint, with the
+   affected UI named. Preserve the .op source. Use ChatGPT Sites only on an
+   explicit publishing request.
+6. For a panel request, call `canvas_codegen_complete` with its `requestId` and the
    absolute `codePath` of the primary source file after verification. The extension
    must match the requested framework (`.tsx`/`.jsx`, `.vue`, `.svelte`, `.html`,
    `.dart`, `.swift`, or `.kt`). It must be a regular UTF-8 file at most 2 MiB.
    The bridge rechecks the design version and request identity. A refusal retains
    the previous preview; do not retry against a different request automatically.
-6. Return links to the runnable project and primary source, launch instructions,
+7. Return links to the runnable project and primary source, launch instructions,
    checks performed and remaining limitations. The panel previews/copies/downloads
    one primary source; supporting files and the full project remain in the workspace.
 

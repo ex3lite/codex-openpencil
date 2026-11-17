@@ -2,6 +2,8 @@
 import '@ui-sdk/web/toolbar';
 import '@ui-sdk/web/drawer';
 import '@ui-sdk/web/button';
+import '@ui-sdk/web/dialog';
+import '@ui-sdk/web/popover';
 import { createAgent, registerTools } from '@ui-sdk/web/agent';
 
 const sheet = document.getElementById('workspace-sheet');

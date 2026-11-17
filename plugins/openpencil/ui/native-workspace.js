@@ -5,6 +5,10 @@ const nativeWorkspace = (() => {
   let contextChanged = () => {}, retryContext = () => {}, delivery = {state:'pending'}, contextNotice = '';
   const context = nativeContextState.create();
   const drawer = $('workspace-drawer');
+  const documentsDialog = $('workspace-documents-dialog');
+  const more = $('workspace-more');
+  const dock = $('workspace-dock');
+  const documentTitle = $('workspace-document-title');
   function make(tag, text, className) {
     const element = document.createElement(tag); if (text) element.textContent = text;
     if (className) element.className = className; return element;
@@ -16,15 +20,16 @@ const nativeWorkspace = (() => {
   }
   function closed() {
     rememberDraft(); mode = null;
-    for (const b of document.querySelectorAll('#workspace-bar [aria-expanded]')) b.setAttribute('aria-expanded', 'false');
+    for (const b of document.querySelectorAll('#workspace-bar button[aria-controls=workspace-sheet-content]')) b.setAttribute('aria-expanded', 'false');
   }
   function close() { nativeUI.closePanel(); closed(); }
   nativeUI.onClose(closed);
   function show(next, title) {
     rememberDraft(); mode = next; drawer.replaceChildren();
     const active = {context:'context',comment:'comment',comments:'comments',agents:'agents',library:'library',documents:'documents'}[next];
-    for (const b of document.querySelectorAll('#workspace-bar [aria-expanded]')) b.setAttribute('aria-expanded', String(b.id === `workspace-${active}`));
-    nativeUI.openPanel(title, ['library','documents'].includes(next), next === 'comment' ? '#comment-text' : 'content');
+    for (const b of document.querySelectorAll('#workspace-bar button[aria-controls=workspace-sheet-content]')) b.setAttribute('aria-expanded', String(b.id === `workspace-${active}`));
+    $('workspace-sheet-content').dataset.panel = next;
+    nativeUI.openPanel(title, next === 'library', next === 'comment' ? '#comment-text' : 'content');
   }
   function describe(selection) {
     if (!selection?.count) return 'Выберите слой на холсте или в списке слоёв';
@@ -33,7 +38,7 @@ const nativeWorkspace = (() => {
   function contextData() { return context.payload(); }
   function contextEdit(action) {
     action(); contextNotice = ''; contextChanged(); renderContext();
-    $('workspace-context').textContent = `Контекст · ${context.attachments.length}`;
+    $('workspace-context-label').textContent = `Контекст · ${context.attachments.length}`;
   }
   async function addContext() {
     const current = await nativeEditor.captureSelection();
@@ -167,18 +172,49 @@ const nativeWorkspace = (() => {
   function updateExpand() {
     const value=nativeBridge.context.displayMode;
     $('toolbar-chat').hidden=value!=='fullscreen';
-    $('workspace-expand').textContent = value === 'fullscreen' ? 'Свернуть' : 'Развернуть';
+    $('workspace-expand').textContent = value === 'fullscreen' ? 'Свернуть редактор' : 'Развернуть редактор';
     if(nativeEditor.ready && ['inline','fullscreen'].includes(value) && displayedMode!==value) {
       nativeEditor.send({type:'op-bridge/display-mode',mode:value});displayedMode=value;
     }
   }
   const openLibrary=()=>nativeLibrary.open({show,drawer,make,button}).catch(e=>nativeEditor.status(e.message,true));
   $('workspace-library').onclick=openLibrary;
-  $('workspace-documents').onclick=()=>nativeDocuments.open({show,drawer,make,button,close}).catch(e=>nativeEditor.status(e.message,true));
+  documentsDialog.addEventListener('openchange', event => {
+    if (!event.detail.value) {
+      nativeDocuments.invalidate();
+      return;
+    }
+    close();
+    nativeDocuments.open({
+      make, button, drawer: $('workspace-documents-body'),
+      describe: text => { $('workspace-documents-description').textContent = text; },
+      close: () => { documentsDialog.open = false; },
+    }).catch(error => nativeEditor.status(error.message, true));
+  });
+  const send = (type, payload) => nativeEditor.send({ type: 'op-bridge/' + type, ...payload });
+  for (const button of dock.querySelectorAll('button[data-tool]')) {
+    button.onclick = () => send('tool', {tool:button.dataset.tool});
+  }
+  const otherTool = $('workspace-other-tool');
+  otherTool.onchange = () => {
+    if (otherTool.value) send('tool', {tool:otherTool.value});
+    more.open = false;
+  };
+  for (const button of more.querySelectorAll('[data-editor-action]')) {
+    button.onclick = () => send('editor-action', {action:button.dataset.editorAction});
+  }
+  $('workspace-zoom-out').onclick = () => send('zoom', {in:false});
+  $('workspace-zoom-in').onclick = () => send('zoom', {in:true});
+  $('workspace-zoom-value').onclick = () => send('fit-content');
+  $('workspace-dock-comment').onclick = () => captureComment().catch(error => nativeEditor.status(error.message, true));
+  more.addEventListener('click', event => {
+    if (event.target.closest('#workspace-more-content button')) more.open = false;
+  });
   $('workspace-chat').onclick=()=>backToChat().catch(e=>nativeEditor.status(e.message,true));
   $('workspace-attach').onclick=()=>addContext().catch(e=>nativeEditor.status(e.message,true));
   $('workspace-inspector').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-inspector'});
   $('workspace-inspector-close').onclick=$('workspace-inspector').onclick;
+  $('workspace-inspector-restore').querySelector('button').onclick=$('workspace-inspector').onclick;
   $('workspace-sidebar').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-sidebar'});
   $('workspace-preview').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-preview'});
   $('workspace-fit').onclick=()=>nativeEditor.send({type:'op-bridge/fit-content'});
@@ -204,16 +240,28 @@ const nativeWorkspace = (() => {
       $('workspace-inspector').textContent=event.inspector?'Скрыть свойства':'Показать свойства';
       $('workspace-inspector').setAttribute('aria-pressed',String(event.inspector));
       $('workspace-inspector-close').hidden=!event.inspectorVisible;
+      $('workspace-inspector-restore').hidden=event.inspector;
+      document.documentElement.dataset.layers = String(event.layers);
+      document.documentElement.dataset.inspector = String(event.inspectorVisible);
+    }
+    if (event.type === 'op-shell/dock-state') {
+      for (const button of dock.querySelectorAll('button[data-tool]')) {
+        button.setAttribute('aria-pressed', String(button.dataset.tool === event.tool));
+      }
+      $('workspace-zoom-value').textContent = event.zoom + '%';
+      otherTool.value = [...otherTool.options].some(option => option.value === event.tool) ? event.tool : '';
     }
     if(event.type==='op-shell/preview-state') {
       $('workspace-preview').setAttribute('aria-pressed',String(event.active));
-      $('workspace-preview').textContent=event.active?'В редактор':'Прототип';
+      $('workspace-preview-label').textContent=event.active?'К редактору':'Проверить';
+      $('workspace-preview').setAttribute('aria-label', event.active ? 'К редактору' : 'Проверить прототип');
+      document.documentElement.dataset.preview = String(event.active);
     }
     if (event.type === 'op-shell/library') void openLibrary();
     if (event.type === 'op-shell/display-mode') void expand().catch(e => nativeEditor.status(e.message,true));
     if (event.type === 'op-shell/document-replaced') {
       target = null; commentDraft=null; context.reset(); contextChanged();
-      $('workspace-context').textContent = 'Контекст · 0'; close();
+      $('workspace-context-label').textContent = 'Контекст · 0'; close(); documentsDialog.open = false;
     }
   });
   return {
@@ -238,12 +286,15 @@ const nativeWorkspace = (() => {
       $('workspace-save-state').dataset.error=String(failed);
       $('workspace-save-state').title=failed?saving.error||'Проверьте синхронизацию':'';
       $('workspace-project').textContent=current.project?.name||'Проект';
-      $('workspace-context').textContent = `Контекст · ${context.attachments.length}`;
+      const documentName = current.filePath?.split(/[/\\]/).pop()?.replace(/\.op$/i,'') || 'Без названия';
+      documentTitle.textContent = documentName;
+      documentTitle.title = documentName;
+      $('workspace-context-label').textContent = `Контекст · ${context.attachments.length}`;
       $('workspace-context').title = 'Только явно добавленные вложения';
       $('workspace-attach').disabled=!current.selection?.count || !nativeBridge.capabilities.updateModelContext;
-      $('workspace-comment').disabled = !current.selection?.count;
+      $('workspace-comment').disabled = $('workspace-dock-comment').disabled = !current.selection?.count;
       const agentCount=(current.agents?.agents?.length||0)+(current.agents?.parent?1:0);
-      $('toolbar-agents').hidden=!agentCount; $('workspace-agents').hidden=!agentCount;
+      $('workspace-agents').hidden=!agentCount;
       $('workspace-agents').textContent=`Агенты · ${agentCount}`;
       if(mode==='comments' && JSON.stringify(current.comments||[])!==commentsKey)paintComments(current.comments||[]);
       if (mode === 'context') {

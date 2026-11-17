@@ -1,48 +1,77 @@
-// Project-local document navigation. Opening never sends a model message.
 const nativeDocuments = (() => {
-  let opening = false, epoch = 0;
-  async function open({show,drawer,make,button,close}) {
+  let opening = false;
+  let epoch = 0;
+
+  function invalidate() { epoch++; }
+
+  async function open({drawer, make, button, describe, close}) {
     const turn = ++epoch;
-    show('documents', 'Макеты проекта');
-    const loading = make('p', 'Загружаем макеты…'); drawer.append(loading);
+    describe('');
+    const loading = make('p', 'Загружаем макеты…');
+    drawer.replaceChildren(loading);
     const data = await nativeEditor.call('canvas_documents');
-    if (turn !== epoch || !drawer.contains(loading)) return;
-    drawer.replaceChildren();
-    drawer.append(make('p', `Только макеты проекта «${data.project.name}». Изменения сохраняются автоматически.`));
-    const label = make('label', 'Найти макет'); label.htmlFor = 'documents-search';
-    const search = make('input'); search.id = 'documents-search'; search.type = 'search'; search.placeholder = 'Название макета';
-    const notice = make('p'); notice.setAttribute('role', 'status'); notice.setAttribute('aria-live','polite');
-    const list = make('div', null, 'documents-grid');
-    drawer.append(label, search, notice, list);
-    const documents = [...data.documents].sort((a,b) => Number(b.id===data.documentId)-Number(a.id===data.documentId) ||
-      String(b.lastOpenedAt||b.updatedAt).localeCompare(String(a.lastOpenedAt||a.updatedAt)));
+    if (turn !== epoch) return;
+    describe(`${data.project.name} · Все изменения сохраняются автоматически`);
+    const search = make('input');
+    search.type = 'search';
+    search.placeholder = 'Найти макет по названию';
+    search.setAttribute('aria-label', search.placeholder);
+    const notice = make('p', '', 'documents-notice');
+    notice.setAttribute('role', 'status');
+    const list = make('div', '', 'documents-grid');
+    drawer.replaceChildren(search, notice, list, make('p', 'Макеты привязаны к папке этого чата.', 'documents-note'));
+
+    const documents = [...data.documents].sort((a, b) =>
+      Number(b.id === data.documentId) - Number(a.id === data.documentId) ||
+      String(b.lastOpenedAt || b.updatedAt).localeCompare(String(a.lastOpenedAt || a.updatedAt)));
+
     function render() {
       list.replaceChildren();
-      const matches = documents.filter(d=>d.name.toLocaleLowerCase().includes(search.value.trim().toLocaleLowerCase()));
-      if (!matches.length) list.append(make('p', search.value ? 'Ничего не найдено. Попробуйте другое название.' : 'В этом проекте пока нет макетов.'));
+      const query = search.value.trim().toLocaleLowerCase();
+      const matches = documents.filter(doc => doc.name.toLocaleLowerCase().includes(query));
+      if (!matches.length) {
+        const empty = make('div', '', 'documents-empty');
+        if (query) {
+          empty.append(make('strong', 'Ничего не найдено'),
+            make('p', 'Попробуйте другое название.\nСписок ограничен текущим проектом.'),
+            button('Сбросить поиск', () => { search.value = ''; render(); search.focus(); }));
+        } else {
+          empty.append(make('strong', 'В этом проекте пока нет макетов'));
+        }
+        list.append(empty);
+      }
+
       for (const doc of matches) {
         const current = doc.id === data.documentId;
         const available = doc.status !== 'blocked' && (doc.status === 'available' || doc.canRecover);
-        const item = make('article', null, 'document-card'); item.dataset.current=String(current);
-        item.append(make('span', current ? 'Открыт сейчас' : 'Макет', 'document-badge'), make('strong', doc.name),
-          make('small', doc.relativePath || 'Локальный черновик'));
+        const item = make('article', '', 'document-card');
+        item.dataset.current = String(current);
+        item.append(make('span', 'МАКЕТ', 'document-badge'), make('strong', doc.name),
+          make('small', current ? 'Открыт сейчас' : available ? doc.relativePath || 'Локальный черновик' : 'Файл недоступен'));
         const action = button(current ? 'На холсте' : 'Открыть', async () => {
-          if (opening || current) return;
-          opening = true; render(); search.disabled = true;
+          if (opening || current || !available || data.switchUncertain) return;
+          opening = true;
+          search.disabled = true;
+          render();
           notice.textContent = 'Сохраняем текущие изменения и открываем макет…';
           try {
             await nativeEditor.switchDocument(doc.id);
             close();
           } catch (error) {
             notice.textContent = error.message;
-          } finally { opening = false; search.disabled = false; render(); }
-        }, current ? '' : 'primary');
+          } finally {
+            opening = false;
+            search.disabled = false;
+            if (turn === epoch) render();
+          }
+        }, 'primary');
         action.disabled = current || opening || !available || Boolean(data.switchUncertain);
-        if (!available) item.append(make('small', 'Файл недоступен'));
-        item.append(action); list.append(item);
+        item.append(action);
+        list.append(item);
       }
     }
-    search.oninput = render; render();
+    search.oninput = render;
+    render();
   }
-  return {open};
+  return {open, invalidate};
 })();

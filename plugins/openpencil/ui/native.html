@@ -1,4 +1,82 @@
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpenBrush · Редактор Codex</title><style>
 :root{color-scheme:dark;--surface:#202022;--line:#444448;--text:#f1f1f2;--muted:#aaa;--base:#18181b}html[data-theme=light]{color-scheme:light;--surface:#fff;--line:#d2d2d7;--text:#18181b;--muted:#64646a;--base:#f4f4f5}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--base);color:var(--text);font:13px system-ui}#op{display:block}#boot{position:fixed;inset:0;display:grid;place-content:center;text-align:center;background:var(--base);z-index:5;gap:12px}#boot[hidden],[hidden]{display:none!important}#boot strong{font-size:20px}#boot-status{color:var(--muted);max-width:520px;padding:0 25px;white-space:pre-wrap}button,input{font:inherit}button{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:8px;padding:9px 14px;cursor:pointer}button:focus-visible,input:focus-visible{outline:2px solid #3980f7;outline-offset:3px}button.primary{background:#2868dd;border-color:#2868dd;color:white}#runtime-error,#operation-status{position:fixed;bottom:14px;left:14px;max-width:min(510px,calc(100vw - 52px));z-index:8;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:10px;white-space:pre-wrap;box-shadow:0 5px 24px #0003}#operation-status{display:flex;gap:12px;align-items:center}#operation-status[data-error=true],#runtime-error{border-color:#cf6666}#status-dismiss{padding:0 4px;border:0;background:none;font-size:18px}label{display:block;margin-bottom:8px}input{box-sizing:border-box;width:100%;padding:11px 12px;border-radius:8px;border:1px solid var(--line);background:var(--base);color:var(--text)}.actions{display:flex;gap:8px;justify-content:flex-end;margin-top:22px}
 /* WORKSPACE_CSS */
-</style></head><body><header id="workspace-bar" data-openbrush-ui><div class="workspace-identity"><strong>OpenBrush</strong><span id="workspace-project">Проект</span><span id="workspace-save-state" role="status" aria-live="polite" hidden></span></div><ui-button id="toolbar-documents"><button id="workspace-documents" type="button" aria-expanded="false" aria-controls="workspace-sheet-content">Макеты</button></ui-button><ui-toolbar aria-label="Редактор"><ui-toolbar-button id="toolbar-sidebar"><button id="workspace-sidebar" type="button" aria-label="Показать или скрыть слои" aria-pressed="true">Скрыть слои</button></ui-toolbar-button><ui-toolbar-button id="toolbar-inspector"><button id="workspace-inspector" type="button" aria-label="Показать или скрыть свойства" aria-pressed="true">Скрыть свойства</button></ui-toolbar-button><ui-toolbar-button id="toolbar-attach"><button id="workspace-attach" type="button" aria-label="Прикрепить выделение в контекст чата" disabled>В контекст</button></ui-toolbar-button><ui-toolbar-button id="toolbar-context"><button id="workspace-context" type="button" aria-label="Контекст" aria-expanded="false" aria-controls="workspace-sheet-content">Контекст · 0</button></ui-toolbar-button><ui-toolbar-button id="toolbar-library"><button id="workspace-library" type="button" aria-label="Библиотека" aria-expanded="false" aria-controls="workspace-sheet-content">Библиотека</button></ui-toolbar-button><ui-toolbar-button id="toolbar-comment"><button id="workspace-comment" type="button" aria-label="Комментировать выделение" disabled aria-expanded="false" aria-controls="workspace-sheet-content">Комментировать</button></ui-toolbar-button><ui-toolbar-button id="toolbar-comments"><button id="workspace-comments" type="button" aria-label="Комментарии" aria-expanded="false" aria-controls="workspace-sheet-content">Комментарии</button></ui-toolbar-button><ui-toolbar-button hidden id="toolbar-agents"><button id="workspace-agents" type="button" aria-label="Локальные агенты" hidden aria-expanded="false" aria-controls="workspace-sheet-content">Агенты</button></ui-toolbar-button><ui-toolbar-button id="toolbar-preview"><button id="workspace-preview" type="button" aria-label="Проверить прототип" aria-pressed="false">Прототип</button></ui-toolbar-button><ui-toolbar-button id="toolbar-fit"><button id="workspace-fit" type="button" aria-label="Уместить макет">Уместить</button></ui-toolbar-button><ui-toolbar-button id="toolbar-chat" hidden><button id="workspace-chat" type="button">К чату</button></ui-toolbar-button><ui-toolbar-button id="toolbar-expand"><button id="workspace-expand" type="button" aria-label="Развернуть редактор">Развернуть</button></ui-toolbar-button></ui-toolbar></header><button id="workspace-inspector-close" data-openbrush-ui type="button" aria-label="Закрыть свойства слоя" title="Закрыть свойства слоя" hidden>×</button><main id="editor-viewport"><canvas id="op" aria-label="Редактируемый макет" tabindex="0"></canvas></main><ui-drawer id="workspace-sheet" side="right" modal="false" data-openbrush-ui><ui-drawer-backdrop hidden></ui-drawer-backdrop><ui-drawer-content id="workspace-sheet-content" initial-focus="content" hidden data-openbrush-ui><div class="drawer-heading"><ui-drawer-title id="workspace-sheet-title">Панель</ui-drawer-title><ui-drawer-close><button type="button" aria-label="Закрыть панель">×</button></ui-drawer-close></div><ui-drawer-description class="visually-hidden">Библиотека и обратная связь по макету</ui-drawer-description><div id="workspace-drawer"></div></ui-drawer-content></ui-drawer><div id="boot"><strong>OpenBrush</strong><span id="boot-status">Запуск редактора…</span></div><div id="runtime-error" role="alert" hidden></div><div id="operation-status" role="status" aria-live="polite" hidden><span id="status-message"></span><button id="status-dismiss" aria-label="Закрыть уведомление">×</button></div><script>/* NATIVE_SCRIPT */</script></body></html>
+</style></head><body>
+<header id="workspace-bar" data-openbrush-ui>
+  <div class="workspace-identity">
+    <i data-ob-icon="brand" aria-hidden="true"></i><strong>OpenBrush</strong>
+    <span id="workspace-project">Проект</span>
+    <span id="workspace-save-state" role="status" aria-live="polite" hidden></span>
+  </div>
+  <span id="workspace-document-title"></span>
+  <ui-toolbar aria-label="Редактор">
+    <ui-toolbar-button id="toolbar-chat" hidden><button id="workspace-chat" type="button">К чату</button></ui-toolbar-button>
+    <ui-dialog-trigger for="workspace-documents-dialog"><button id="workspace-documents" type="button">Макеты</button></ui-dialog-trigger>
+    <ui-toolbar-button><button id="workspace-library" type="button" aria-expanded="false" aria-controls="workspace-sheet-content"><i data-ob-icon="library" aria-hidden="true"></i><span>Библиотека</span></button></ui-toolbar-button>
+    <ui-toolbar-button><button id="workspace-context" type="button" aria-expanded="false" aria-controls="workspace-sheet-content"><i data-ob-icon="context" aria-hidden="true"></i><span id="workspace-context-label">Контекст · 0</span></button></ui-toolbar-button>
+    <ui-toolbar-button><button id="workspace-preview" type="button" aria-label="Проверить прототип" aria-pressed="false"><i data-ob-icon="play" aria-hidden="true"></i><span id="workspace-preview-label">Проверить</span></button></ui-toolbar-button>
+  </ui-toolbar>
+  <ui-popover id="workspace-more">
+    <ui-popover-trigger><button id="workspace-more-trigger" type="button" title="Действия редактора" aria-label="Действия редактора"><i data-ob-icon="more" aria-hidden="true"></i></button></ui-popover-trigger>
+    <ui-popover-content id="workspace-more-content" align="end" side-offset="8" hidden data-openbrush-ui>
+      <ui-popover-title class="visually-hidden">Действия редактора</ui-popover-title>
+      <button id="workspace-expand" type="button">Развернуть редактор</button>
+      <button id="workspace-sidebar" type="button" aria-pressed="true">Скрыть слои</button>
+      <button id="workspace-inspector" type="button" aria-pressed="true">Скрыть свойства</button>
+      <button id="workspace-fit" type="button">Уместить макет</button>
+      <button id="workspace-attach" type="button" disabled>В контекст</button>
+      <button id="workspace-comment" type="button" disabled>Комментировать</button>
+      <button id="workspace-comments" type="button">Комментарии</button>
+      <button id="workspace-agents" type="button" hidden>Локальные агенты</button>
+      <button data-editor-action="undo" type="button">Отменить</button>
+      <button data-editor-action="redo" type="button">Повторить</button>
+      <button data-editor-action="variables" type="button">Переменные</button>
+      <button data-editor-action="resources" type="button">Компоненты и шаблоны</button>
+      <label for="workspace-other-tool">Другие инструменты</label>
+      <select id="workspace-other-tool">
+        <option value="">Выбрать инструмент</option>
+        <optgroup label="Фигуры">
+          <option value="rect">Прямоугольник</option><option value="ellipse">Эллипс</option>
+          <option value="polygon">Многоугольник</option><option value="line">Линия</option><option value="pen">Перо</option>
+        </optgroup>
+        <optgroup label="Поля и элементы управления">
+          <option value="text_input">Поле ввода</option><option value="text_area">Область текста</option>
+          <option value="number_input">Числовое поле</option><option value="select_widget">Список выбора</option>
+          <option value="radio_group">Группа переключателей</option><option value="switch">Переключатель</option>
+          <option value="checkbox">Флажок</option><option value="slider">Ползунок</option>
+          <option value="progress">Индикатор прогресса</option><option value="tabs">Вкладки</option>
+        </optgroup>
+      </select>
+    </ui-popover-content>
+  </ui-popover>
+  <strong id="workspace-preview-caption" hidden>Проверка прототипа</strong>
+</header>
+<button id="workspace-inspector-close" data-openbrush-ui type="button" aria-label="Закрыть свойства слоя" title="Закрыть свойства слоя" hidden><i data-ob-icon="close" aria-hidden="true"></i></button>
+<ui-button id="workspace-inspector-restore" data-openbrush-ui hidden><button type="button" aria-label="Показать свойства слоя"><span>Свойства скрыты</span><i data-ob-icon="inspector" aria-hidden="true"></i></button></ui-button>
+<ui-toolbar id="workspace-dock" aria-label="Инструменты холста" data-openbrush-ui>
+  <div class="dock-tools">
+    <ui-toolbar-button><button type="button" data-tool="select" aria-pressed="true" aria-label="Выбор" title="Выбор"><i data-ob-icon="select" aria-hidden="true"></i></button></ui-toolbar-button>
+    <ui-toolbar-button><button type="button" data-tool="frame" aria-pressed="false" aria-label="Фрейм" title="Фрейм"><i data-ob-icon="frame" aria-hidden="true"></i></button></ui-toolbar-button>
+    <ui-toolbar-button><button type="button" data-tool="text" aria-pressed="false" aria-label="Текст" title="Текст"><i data-ob-icon="text" aria-hidden="true"></i></button></ui-toolbar-button>
+    <ui-toolbar-button><button type="button" data-tool="hand" aria-pressed="false" aria-label="Панорамирование" title="Панорамирование"><i data-ob-icon="hand" aria-hidden="true"></i></button></ui-toolbar-button>
+    <ui-toolbar-button><button type="button" id="workspace-dock-comment" aria-label="Комментарий к выделению" title="Комментарий к выделению" disabled><i data-ob-icon="comment" aria-hidden="true"></i></button></ui-toolbar-button>
+  </div>
+  <span class="dock-divider" aria-hidden="true"></span>
+  <div class="dock-zoom">
+    <ui-toolbar-button><button type="button" id="workspace-zoom-out" title="Уменьшить масштаб" aria-label="Уменьшить масштаб"><i data-ob-icon="minus" aria-hidden="true"></i></button></ui-toolbar-button>
+    <ui-toolbar-button><button type="button" id="workspace-zoom-value" title="Уместить макет" aria-label="Уместить макет">100%</button></ui-toolbar-button>
+    <ui-toolbar-button><button type="button" id="workspace-zoom-in" title="Увеличить масштаб" aria-label="Увеличить масштаб"><i data-ob-icon="plus" aria-hidden="true"></i></button></ui-toolbar-button>
+  </div>
+</ui-toolbar>
+<ui-dialog id="workspace-documents-dialog" data-openbrush-ui>
+  <ui-dialog-backdrop id="workspace-documents-backdrop" hidden></ui-dialog-backdrop>
+  <ui-dialog-content id="workspace-documents-content" initial-focus="content" hidden data-openbrush-ui>
+    <div class="documents-heading">
+      <ui-dialog-title>Макеты проекта</ui-dialog-title>
+      <ui-dialog-close><button type="button">Закрыть</button></ui-dialog-close>
+    </div>
+    <ui-dialog-description id="workspace-documents-description"></ui-dialog-description>
+    <div id="workspace-documents-body"></div>
+  </ui-dialog-content>
+</ui-dialog>
+<main id="editor-viewport"><canvas id="op" aria-label="Редактируемый макет" tabindex="0"></canvas></main><ui-drawer id="workspace-sheet" side="right" modal="false" data-openbrush-ui><ui-drawer-backdrop hidden></ui-drawer-backdrop><ui-drawer-content id="workspace-sheet-content" initial-focus="content" hidden data-openbrush-ui><div class="drawer-heading"><ui-drawer-title id="workspace-sheet-title">Панель</ui-drawer-title><ui-drawer-close><button type="button" aria-label="Закрыть панель">×</button></ui-drawer-close></div><ui-drawer-description class="visually-hidden">Библиотека и обратная связь по макету</ui-drawer-description><div id="workspace-drawer"></div></ui-drawer-content></ui-drawer><div id="boot"><strong>OpenBrush</strong><span id="boot-status">Запуск редактора…</span></div><div id="runtime-error" role="alert" hidden></div><div id="operation-status" role="status" aria-live="polite" hidden><span id="status-message"></span><button id="status-dismiss" aria-label="Закрыть уведомление">×</button></div><script>/* NATIVE_SCRIPT */</script></body></html>

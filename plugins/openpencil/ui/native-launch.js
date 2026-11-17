@@ -6,6 +6,16 @@ const nativeLaunch = (() => {
   async function connect({call,request,capabilities}) {
     if(pending) return pending;
     pending=(async()=>{
+      // A host that exposes this chat's MCP root can bind directly. Never fall
+      // back to a model request after an ambiguous or failed mutation.
+      try {
+        const opened = await call('open_canvas');
+        const session = opened._meta?.canvasSession;
+        if (!session?.projectRoot || !session?.sessionId) throw Error('Редактор открыт, но Codex не передал его сеанс. Переоткройте панель.');
+        return session;
+      } catch (error) {
+        if (!['PROJECT_ROOT_REQUIRED','PROJECT_ROOT_AMBIGUOUS','MCP_ROOTS_UNAVAILABLE'].includes(error.code)) throw error;
+      }
       if(!capabilities.message?.text) throw Error('Этот режим Codex не позволяет подключить панель к чату. Напишите в текущем чате «Открой OpenBrush».');
       const launch=value(await call('canvas_launch_prepare'));
       const context={launchId:launch.launchId,instruction:'Call open_canvas with this launchId and projectRoot from the current chat working directory. Do not ask the user for a folder. Reuse the current canvas or choose the existing project document; do not create a new empty draft if the project already has the requested design.'};

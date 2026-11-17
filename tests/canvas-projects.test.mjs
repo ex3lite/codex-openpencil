@@ -234,3 +234,11 @@ test('reselecting the current document preserves the saved source in the UI resp
   assert.equal(result.recoveryPath, (await f.controller.project.getDocument(f.controller.documentId)).recoveryPath);
   assert.equal(f.requests.length, 0);
 });
+
+test('default opening resumes a registered document in this project, without adding an empty draft', async t => {
+ const f=await fixture(t);await f.session.checkpoint();await f.controller.releaseProjectLease();
+ const next={options:{projectRoot:f.a}};t.after(()=>next.releaseProjectLease?.());
+ const opened=await bindProject(next,{});
+ assert.equal(opened.documentId,f.binding.documentId);
+ assert.equal((await next.project.listDocuments()).documents.length,1);
+});

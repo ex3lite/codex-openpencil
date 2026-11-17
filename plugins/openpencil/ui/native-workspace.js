@@ -22,9 +22,9 @@ const nativeWorkspace = (() => {
   nativeUI.onClose(closed);
   function show(next, title) {
     rememberDraft(); mode = next; drawer.replaceChildren();
-    const active = {context:'context',comment:'comment',comments:'comments',agents:'agents',library:'library'}[next];
+    const active = {context:'context',comment:'comment',comments:'comments',agents:'agents',library:'library',documents:'documents'}[next];
     for (const b of document.querySelectorAll('#workspace-bar [aria-expanded]')) b.setAttribute('aria-expanded', String(b.id === `workspace-${active}`));
-    nativeUI.openPanel(title, next === 'library', next === 'comment' ? '#comment-text' : 'content');
+    nativeUI.openPanel(title, ['library','documents'].includes(next), next === 'comment' ? '#comment-text' : 'content');
   }
   function describe(selection) {
     if (!selection?.count) return 'Выберите слой на холсте или в списке слоёв';
@@ -158,8 +158,15 @@ const nativeWorkspace = (() => {
     if (result?.mode !== next) throw Error('Codex не подтвердил изменение размера панели.');
     nativeBridge.setDisplayMode(result.mode); updateExpand();
   }
+  async function backToChat() {
+    if (!nativeBridge.context.availableDisplayModes?.includes('inline')) throw Error('Codex не предоставил возврат к чату.');
+    const result = await nativeBridge.request('ui/request-display-mode', {mode:'inline'});
+    if (result?.mode !== 'inline') throw Error('Codex не подтвердил возврат к чату.');
+    nativeBridge.setDisplayMode(result.mode); updateExpand();
+  }
   function updateExpand() {
     const value=nativeBridge.context.displayMode;
+    $('toolbar-chat').hidden=value!=='fullscreen';
     $('workspace-expand').textContent = value === 'fullscreen' ? 'Свернуть' : 'Развернуть';
     if(nativeEditor.ready && ['inline','fullscreen'].includes(value) && displayedMode!==value) {
       nativeEditor.send({type:'op-bridge/display-mode',mode:value});displayedMode=value;
@@ -167,6 +174,8 @@ const nativeWorkspace = (() => {
   }
   const openLibrary=()=>nativeLibrary.open({show,drawer,make,button}).catch(e=>nativeEditor.status(e.message,true));
   $('workspace-library').onclick=openLibrary;
+  $('workspace-documents').onclick=()=>nativeDocuments.open({show,drawer,make,button,close}).catch(e=>nativeEditor.status(e.message,true));
+  $('workspace-chat').onclick=()=>backToChat().catch(e=>nativeEditor.status(e.message,true));
   $('workspace-attach').onclick=()=>addContext().catch(e=>nativeEditor.status(e.message,true));
   $('workspace-inspector').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-inspector'});
   $('workspace-inspector-close').onclick=$('workspace-inspector').onclick;

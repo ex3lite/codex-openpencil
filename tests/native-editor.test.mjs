@@ -109,3 +109,25 @@ test('restore blocks stale autosaves until Rust confirms the remote document ope
  f.emit({type:'op-shell/autosave'});await settle();
  assert.equal(f.calls.filter(c=>c.name==='canvas_autosave').length,1);
 });
+
+test('project switch persists old snapshot then waits for remote application before enabling input',async()=>{
+ const f=fixture(async(name)=>({filePath:name==='canvas_document_open'?'/tmp/other.op':'/tmp/design.op'}));
+ const switching=f.editor.switchDocument('other');await settle();
+ assert.equal(f.el('editor-viewport').inert,true);
+ assert.equal(f.editor.source,'/tmp/other.op');
+ const calls=f.calls.filter(c=>c.name).map(c=>c.name);
+ assert.deepEqual(calls,['canvas_native_request','canvas_autosave','canvas_document_open']);
+ assert.ok(f.calls.some(c=>c.type==='op-bridge/resolve-conflict'&&c.mode==='accept-remote'));
+ f.emit({type:'op-bridge/dirty-changed',generation:8,revision:0,dirty:false});await switching;
+ assert.equal(f.el('editor-viewport').inert,false);
+});
+test('failed old snapshot persistence never switches documents and allows editing to continue',async()=>{
+ const f=fixture(async()=>{throw Error('Disk full');});
+ f.emit({type:'op-bridge/dirty-changed',generation:7,revision:4,dirty:true});await settle();
+ await assert.rejects(f.editor.switchDocument('other'),/Disk full/);
+ assert.equal(f.calls.some(c=>c.name==='canvas_document_open'),false);
+ assert.equal(f.editor.source,'/tmp/design.op');assert.equal(f.el('editor-viewport').inert,false);
+ f.emit({type:'op-shell/autosave'});await settle();
+ assert.equal(f.calls.filter(c=>c.name==='canvas_autosave').length,1,'failed persistence must not retry');
+ await assert.rejects(f.editor.switchDocument('other'),/синхронизацию/);
+});

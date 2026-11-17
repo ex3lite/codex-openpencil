@@ -1,5 +1,5 @@
 @layer ui-sdk;
-/* The host toolbar occupies the Rust editor's existing 40px chrome inset. */
+/* Host controls share the Codex floating-chrome geometry with the Rust editor. */
 #workspace-bar{position:absolute;inset:0 0 auto;height:40px;z-index:3;display:flex;align-items:center;gap:16px;padding:0 12px;border-bottom:1px solid var(--line);box-sizing:border-box;background:var(--surface);overflow:hidden}
 .workspace-identity{display:flex;align-items:center;gap:10px;min-width:90px;max-width:28%;white-space:nowrap}
 .workspace-identity strong{font-size:13px;letter-spacing:-.025em}.workspace-identity>span{overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:12px}
@@ -76,3 +76,26 @@ button:disabled{opacity:.5;cursor:default}button:not(:disabled):active{filter:br
 @media(pointer:coarse){#workspace-sheet-content button{min-height:44px;min-width:44px}}
 
 #workspace-inspector-close{position:absolute;right:6px;top:44px;z-index:3;display:flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;background:var(--surface);font-size:21px;line-height:1;border-radius:5px}
+
+#toolbar-documents button{min-height:32px;padding:0 12px;white-space:nowrap;font-size:12px;font-weight:600;border-color:transparent;background:var(--base)}
+#workspace-drawer{scrollbar-gutter:stable}
+.documents-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(240px,100%),1fr));gap:16px;margin-top:24px}
+.document-card{display:flex;flex-direction:column;gap:12px;min-width:0;padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--base)}
+.document-card[data-current=true]{border-color:#729fff}
+.document-card strong{font-size:16px;line-height:1.4;overflow-wrap:anywhere}
+.document-card small{color:var(--muted);overflow-wrap:anywhere;line-height:1.5;flex:1}
+.document-badge{font-size:11px;color:var(--muted)}
+.document-card[data-current=true] .document-badge{color:#729fff}
+.document-card button{min-height:36px;line-height:1.2}
+
+/* Codex chrome follows the authored 16 / 56 / 16 layout. */
+#workspace-bar{inset:16px 16px auto;height:56px;padding:0 16px;border:1px solid #353940;border-radius:16px;box-shadow:0 4px 16px #0004;background:#1c1e22;color:#f0f1f3}
+#workspace-bar button{border-radius:6px}
+#workspace-inspector-close{top:96px;right:24px;border-radius:6px;background:#1c1e22}
+#workspace-sheet-content{height:calc(100% - 32px);margin:16px;border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 48px #0005}
+#workspace-sheet-content[data-wide=true]{width:min(1040px,calc(100vw - 32px))}
+#workspace-sheet-content:not([data-wide=true]){width:min(370px,calc(100vw - 32px))}
+#workspace-drawer .document-card{background:#25282d;border-color:#353940}
+#workspace-drawer .document-card[data-current=true]{border-color:#7899ff}
+button.primary{background:#7899ff;border-color:#7899ff;color:#111820}
+@media(max-width:700px){#workspace-bar{inset:16px 16px auto;padding:0 10px;gap:8px}.workspace-identity{min-width:72px}.workspace-identity strong{font-size:12px}}

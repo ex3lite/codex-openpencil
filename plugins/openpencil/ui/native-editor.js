@@ -4,6 +4,7 @@ const nativeEditor = (() => {
   let generation = 0, revision = 0, closed = false, identity = 0;
   let replacementBarrier = Promise.resolve(), autosaveTimer, autosaveDeadline, autosaveFailed = false, rejectedSnapshot = null, restoring = false;
   const snapshots = new Map(), listeners = new Set();
+  let switching = false;
   const element = id => document.getElementById(id);
   const value = result => result._meta?.panelState ?? result.structuredContent ?? JSON.parse(result.content.find(item => item.type === 'text').text);
   const call = async (name, args = {}) => value(await nativeBridge.call(name, args));
@@ -53,7 +54,7 @@ const nativeEditor = (() => {
     }
   }
   async function save() {
-    if (restoring || saving || closed || autosaveFailed || rejectedSnapshot) return;
+    if (switching || restoring || saving || closed || autosaveFailed || rejectedSnapshot) return;
     clearAutosave();
     const savingIdentity = identity;
     let savingPair = { generation, revision };
@@ -79,6 +80,50 @@ const nativeEditor = (() => {
         status(`Автосохранение остановлено: ${error.message}. Проверьте историю и файл перед продолжением.`, true);
       }
     } finally { saving = false; if (dirty && !autosaveFailed && !rejectedSnapshot) scheduleAutosave(); }
+  }
+  async function switchDocument(documentId) {
+    if (switching || restoring) throw Error('Дождитесь открытия макета.');
+    if (saving) throw Error('Текущие изменения ещё сохраняются. Попробуйте открыть макет через секунду.');
+    if (autosaveFailed || rejectedSnapshot) throw Error('Сначала восстановите синхронизацию текущего макета. Его изменения сохранены в редакторе.');
+    switching = true; clearAutosave();
+    const viewport = element('editor-viewport'), toolbar = element('workspace-bar');
+    viewport.inert = toolbar.inert = true;
+    let applied = false, attempted = false, saveAttempted = false;
+    try {
+      await replacementBarrier;
+      const snapshot = await flush();
+      saveAttempted = true;
+      await call('canvas_autosave', {docJson:snapshot.docJson});
+      send({type:'op-bridge/save-committed',generation:snapshot.generation,revision:snapshot.revision});
+      restoring = true;
+      attempted = true;
+      const result = await call('canvas_document_open', {documentId,docJson:snapshot.docJson});
+      applied = true; identity++; source = result.filePath || null;
+      dirty = false; autosaveFailed = false; rejectedSnapshot = null; updateName();
+      // Remote application is acknowledged by the Rust sync gate, not a timer.
+      await new Promise((resolve,reject) => {
+        const timer = setTimeout(() => { listeners.delete(opened); reject(Error('Макет переключён, но холст ещё не подтвердил загрузку. Переоткройте панель перед редактированием.')); }, 120000);
+        function opened(event) {
+          if (event.type !== 'op-bridge/opened' && !(event.type === 'op-bridge/dirty-changed' && event.generation !== snapshot.generation)) return;
+          clearTimeout(timer); listeners.delete(opened); restoring = false; dirty = false; resolve();
+        }
+        listeners.add(opened);
+        if (generation !== snapshot.generation) opened({type:'op-bridge/dirty-changed',generation});
+        else send({type:'op-bridge/resolve-conflict',mode:'accept-remote',requestId:crypto.randomUUID()});
+      });
+      status('Макет открыт. Все изменения сохраняются автоматически.');
+    } catch (error) {
+      // An uncertain replacement must not let the previous browser snapshot
+      // overwrite the newly bound document. Reopen the panel to recover.
+      if (applied || attempted && !['VERSION_CONFLICT','DOCUMENT_SNAPSHOT_STALE','PROJECT_AGENTS_ACTIVE','DOCUMENT_NOT_FOUND','PROJECT_WRITER_BUSY','DOCUMENT_SWITCH_REJECTED'].includes(error.code)) {
+        restoring = true; autosaveFailed = true; status(error.message, true); throw error;
+      }
+      if (saveAttempted && !attempted) { autosaveFailed = true; clearAutosave(); status(`Автосохранение остановлено: ${error.message}`, true); }
+      restoring = false; throw error;
+    } finally {
+      switching = false;
+      if (!restoring) { viewport.inert = toolbar.inert = false; if(dirty && !autosaveFailed) scheduleAutosave(); }
+    }
   }
   function receive(raw, replacement) {
     let event; try { event = JSON.parse(raw); } catch { return; }
@@ -154,7 +199,7 @@ const nativeEditor = (() => {
       send({type:'op-bridge/resolve-conflict',mode:'accept-remote',requestId:crypto.randomUUID()});
     },
     syncBarrier() { return replacementBarrier; },
-    send, flush, captureSelection, call, status,
+    send, flush, captureSelection, call, status, switchDocument,
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };
 })();

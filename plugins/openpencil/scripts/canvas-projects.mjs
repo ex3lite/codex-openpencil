@@ -88,6 +88,12 @@ export async function bindProject(controller, { projectRoot, documentId, filePat
     roots: controller.options?.roots, resolveRoots: controller.options?.resolveRoots, cwd: controller.options?.cwd,
   });
   let selection;
+  if (!documentId && !filePath) {
+    const { documents } = await catalog.listDocuments();
+    const available = documents.filter(entry => entry.status !== 'blocked' && (entry.canRecover || entry.status === 'available'));
+    available.sort((a,b) => String(b.lastOpenedAt || b.updatedAt).localeCompare(String(a.lastOpenedAt || a.updatedAt)));
+    documentId = available[0]?.id;
+  }
   if (!documentId) {
     const entry = await catalog.registerDocument({ filePath: filePath || null });
     documentId = entry.id;

@@ -81,6 +81,32 @@ const nativeEditor = (() => {
       }
     } finally { saving = false; if (dirty && !autosaveFailed && !rejectedSnapshot) scheduleAutosave(); }
   }
+  async function retryAutosave(documentId) {
+    if (saving || switching || restoring || closed) throw Error('Дождитесь завершения операции с макетом.');
+    const savingIdentity = identity;
+    saving = true;
+    clearAutosave();
+    try {
+      const snapshot = await flush();
+      if (savingIdentity !== identity) throw Error('Открыт другой макет.');
+      const result = await call('canvas_autosave', {docJson:snapshot.docJson, retryAccessForDocument:documentId});
+      if (savingIdentity !== identity) throw Error('Открыт другой макет.');
+      source = result.filePath;
+      autosaveFailed = false;
+      rejectedSnapshot = null;
+      if (generation === snapshot.generation && revision === snapshot.revision) dirty = false;
+      send({type:'op-bridge/save-committed', generation:snapshot.generation, revision:snapshot.revision});
+      updateName();
+      status('');
+      return result;
+    } catch (error) {
+      if (savingIdentity === identity) autosaveFailed = true;
+      throw error;
+    } finally {
+      saving = false;
+      if (dirty && !autosaveFailed && !rejectedSnapshot) scheduleAutosave();
+    }
+  }
   async function switchDocument(documentId) {
     if (switching || restoring) throw Error('Дождитесь открытия макета.');
     if (saving) throw Error('Текущие изменения ещё сохраняются. Попробуйте открыть макет через секунду.');
@@ -199,7 +225,7 @@ const nativeEditor = (() => {
       send({type:'op-bridge/resolve-conflict',mode:'accept-remote',requestId:crypto.randomUUID()});
     },
     syncBarrier() { return replacementBarrier; },
-    send, flush, captureSelection, call, status, switchDocument,
+    send, flush, captureSelection, call, status, switchDocument, retryAutosave,
     onEvent(listener) { listeners.add(listener); return () => listeners.delete(listener); },
   };
 })();

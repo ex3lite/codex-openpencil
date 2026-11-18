@@ -36,7 +36,19 @@ const px = number => {
   if (!Number.isFinite(number)) throw Error(`Expected a numeric measurement, got ${number}`);
   return `${number}px`;
 };
+const headerActions = layer('ob-spacing-ob-f-119-header-actions');
+const actionNames = ['documents','library','context','preview','more'];
 const dimensions = {
+  ...Object.fromEntries(headerActions.children.map((node,index) => ['header-' + actionNames[index] + '-width',node.descendants[node.ref].width])),
+  'compact-identity-width': layer('ob-spacing-ob-f-591-identity').width,
+  'preview-action-width': layer('ob-user-fix-14').width,
+  'preview-header-gap': layer('ob-user-fix-17').gap,
+  'preview-caption-size': layer('ob-complete-t-282').fontSize,
+  'state-width': layer('ob-complete-f-24').width, 'state-height': layer('ob-complete-f-24').height,
+  'dialog-width': layer('ob-complete-f-190').width,
+  'settings-height': layer('ob-complete-f-190').height, 'detail-height': layer('ob-complete-f-208').height,
+  'palette-height': layer('ob-complete-f-232').height, 'missing-target-height': layer('ob-complete-f-247').height,
+  'permission-height': layer('ob-complete-f-264').height,
   'context-card-height': layer('ob-r-385').height, 'context-input-height': layer('ob-r-394').height,
   inset: header.x, 'header-height': header.height, 'header-gap': header.gap,
   'panel-radius': picker.cornerRadius, 'panel-top': library.y, 'layers-width': layer('ob-r-122').width,

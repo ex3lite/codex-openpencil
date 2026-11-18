@@ -1,0 +1,133 @@
+/* The 432 × 336 feedback surfaces on the States page. */
+#workspace-sheet-content:is([data-panel=context-summary],[data-panel=comment],[data-panel=comments],[data-panel=agents],[data-panel=retarget]) {
+  width:min(var(--ob-state-width),calc(100vw - 32px));
+  height:min(var(--ob-state-height),calc(100dvh - var(--ob-panel-top) - var(--ob-inset)));
+  inset-block:0 auto;
+  margin-block:var(--ob-panel-top) var(--ob-inset);
+  border:0;
+}
+#workspace-sheet-content:is([data-panel=context-summary],[data-panel=comment],[data-panel=comments],[data-panel=agents],[data-panel=retarget]) .drawer-heading {
+  position:relative;
+  box-sizing:border-box;
+  height:65px;
+  padding:0 24px;
+  border:0;
+}
+#workspace-sheet-content:is([data-panel=context-summary],[data-panel=comment],[data-panel=comments],[data-panel=agents],[data-panel=retarget]) .drawer-heading::after {
+  content:""; position:absolute; inset:auto 24px 0; height:1px; background:var(--ob-border);
+}
+#workspace-sheet-content:is([data-panel=context-summary],[data-panel=comment],[data-panel=comments],[data-panel=agents],[data-panel=retarget]) #workspace-drawer {
+  padding:0; scrollbar-gutter:auto;
+}
+#workspace-sheet-content .drawer-heading:has(+ ui-drawer-description + #workspace-drawer .feedback-state) button,
+.feedback-dialog .feedback-cross {
+  display:grid; place-items:center; width:32px; min-width:32px; height:32px; min-height:32px;
+  padding:0; border:0; border-radius:6px; font:400 20px/1 Inter,system-ui,sans-serif;
+  background:var(--ob-surface); color:var(--ob-ink);
+}
+#workspace-drawer .feedback-state {
+  box-sizing:border-box; display:flex; flex-flow:column; align-items:flex-start;
+  min-height:271px; padding:23px 24px 24px; overflow-wrap:anywhere;
+}
+#workspace-drawer .feedback-state h2,
+.feedback-dialog h2 {
+  min-height:27px; font:650 18px/25px Inter,system-ui,sans-serif;
+  color:var(--ob-ink); margin:20px 0 0;
+}
+#workspace-drawer .feedback-state[data-state=empty] h2 {
+  margin:8px 0 0; font-size:20px; min-height:30px; line-height:28px;
+}
+#workspace-drawer .feedback-state p, .feedback-dialog p {
+  margin:9px 0 0; align-self:stretch; font:400 13px/1.45 Inter,system-ui,sans-serif;
+  letter-spacing:-.025em; white-space:pre-line; color:var(--ob-muted);
+}
+#workspace-drawer .feedback-state button,.feedback-dialog button {
+  font:500 13px/18px Inter,system-ui,sans-serif;
+  border:0; border-radius:6px; background:var(--ob-raised); color:var(--ob-ink);
+  max-width:100%; min-height:32px; padding:0 12px;
+  transition:background var(--ob-motion-control) ease-out;
+}
+#workspace-drawer .feedback-state button.primary, .feedback-dialog button.primary { background:var(--ob-accent); color:#121a2e; }
+#workspace-drawer .feedback-state button:not(:disabled):hover,.feedback-dialog button:not(:disabled):hover { background:var(--ob-hover); }
+#workspace-drawer .feedback-state button.primary:not(:disabled):hover,.feedback-dialog button.primary:not(:disabled):hover { background:#93adff; }
+#workspace-drawer .feedback-state button:disabled,.feedback-dialog button:disabled { opacity:.35; }
+#workspace-drawer .feedback-state :focus-visible,.feedback-dialog :focus-visible { outline:2px solid var(--ob-accent); outline-offset:2px; }
+.feedback-badge {
+  box-sizing:border-box; display:inline-flex; flex:none; align-items:center; gap:6px; min-height:24px; max-width:100%;
+  padding:0 10px; border-radius:6px; background:var(--ob-raised); color:var(--ob-muted);
+  font:550 11px/16px Inter,system-ui,sans-serif; letter-spacing:-.025em;
+}
+.feedback-badge::before { content:""; flex:none; width:6px; height:6px; border-radius:50%; background:currentColor; }
+.feedback-badge[data-tone=accent] { color:var(--ob-accent); }
+.feedback-badge[data-tone=success] { color:var(--ob-success); }
+.feedback-badge[data-tone=danger] { color:var(--ob-danger); }
+.feedback-footer { display:flex; flex-flow:column; align-items:flex-start; align-self:stretch; margin-top:auto; gap:8px; padding-top:16px; }
+.feedback-state small,.feedback-dialog small { letter-spacing:-.025em; color:var(--ob-muted); font:400 11px/17px Inter,system-ui,sans-serif; }
+.feedback-state[data-state=empty] .feedback-footer button,.feedback-state .feedback-reveal { width:168px; }
+.feedback-state .feedback-footer button.primary { width:200px; }
+#workspace-drawer .feedback-target { color:var(--ob-accent); font:500 12px/18px Inter,system-ui,sans-serif; margin:0 0 18px; }
+#workspace-drawer .feedback-state #comment-text { min-height:96px; height:96px; padding:14px 12px; border:0; resize:none; background:var(--ob-canvas); }
+#workspace-drawer .feedback-state .feedback-target-action {
+  padding:0; background:transparent; min-height:17px; border:0; color:var(--ob-muted); font:400 11px/17px Inter,system-ui,sans-serif; letter-spacing:-.025em;
+}
+#workspace-drawer .feedback-target-action:hover { text-decoration:underline; }
+#workspace-drawer .feedback-state .context-attachment { align-self:stretch; min-height:88px; flex:none; padding:14px 16px 16px; margin:0 0 24px; }
+#workspace-drawer .feedback-state .context-attachment button { background:transparent; padding:0; font-size:14px; font-weight:600; min-height:21px; text-align:left; }
+#workspace-drawer .feedback-state .context-attachment button.context-remove {
+  display:grid; place-items:center; width:32px; height:32px; min-height:32px; right:16px; top:8px;
+  padding:0; border-radius:6px; background:var(--ob-surface); color:var(--ob-ink);
+}
+#workspace-drawer .feedback-state .context-attachment button.context-remove:hover { background:var(--ob-hover); }
+#workspace-drawer .feedback-state .context-attachment button.context-remove::before { content:none; }
+#workspace-drawer .feedback-state .context-attachment small { margin:15px 0 0; }
+#workspace-drawer .feedback-state .feedback-badge + p { margin-top:20px; }
+#workspace-drawer .feedback-state[data-state=accepted] .feedback-badge { min-width:130px; }
+.feedback-state[data-state=error] .feedback-badge,.feedback-state[data-state=uncertain] .feedback-badge,.feedback-agents .feedback-badge { min-width:min(187.6px,100%); }
+#workspace-drawer .feedback-state[data-state=error] h2,#workspace-drawer .feedback-state[data-state=uncertain] h2 { margin-top:24px; }
+#workspace-drawer .feedback-state .feedback-retry { width:204px; margin-top:auto; }
+#workspace-drawer .feedback-state .feedback-error-link { padding:0; min-height:0; font:inherit; color:inherit; background:transparent; text-align:left; }
+#workspace-drawer .feedback-state .feedback-error-link:hover { text-decoration:underline; }
+.feedback-comment + .feedback-comment { border-top:1px solid var(--ob-border); }
+.feedback-comment .feedback-badge { min-width:96px; }
+.feedback-comment-detail { margin:20px 0 0; align-self:stretch; }
+.feedback-comment-detail summary { cursor:pointer; list-style:none; font:600 13px/20px Inter,system-ui,sans-serif; }
+.feedback-comment-detail summary::-webkit-details-marker { display:none; }
+.feedback-comment-detail summary:hover { text-decoration:underline; }
+.feedback-comment-detail[open] small { display:block; margin:8px 0; }
+#workspace-drawer .feedback-comment > p { margin-top:16px; }
+#workspace-drawer .feedback-comment .feedback-reveal { margin-top:auto; }
+.feedback-comment[data-state=uncertain] .feedback-comment-detail { margin-top:auto; padding-top:16px; }
+.feedback-comment[data-state=uncertain] summary { letter-spacing:-.025em; font-size:11px; font-weight:400; color:var(--ob-muted); line-height:17px; }
+.feedback-agent { align-self:stretch; margin-top:20px; }
+.feedback-agent strong { font:500 13px/20px Inter,system-ui,sans-serif; }
+.feedback-agent small { display:block; margin-top:6px; }
+.feedback-agents .feedback-badge + .feedback-agent { margin-top:26px; }
+.feedback-agents .feedback-agent + .feedback-agent { margin-top:19px; }
+.feedback-agents .feedback-agent:first-of-type + .feedback-agent { border-top:1px solid var(--ob-border); padding-top:19px; margin-top:15px; }
+.feedback-comment .feedback-agent { border-top:1px solid var(--ob-border); padding-top:20px; margin-top:24px; }
+#workspace-drawer .feedback-state[data-state=empty] > p { margin-top:10px; }
+#workspace-drawer .feedback-comment[data-state=uncertain] > p { margin-top:17px; }
+#workspace-drawer .feedback-state:is([data-state=in_progress],[data-state=resolved],[data-state=uncertain],[data-state=accepted],[data-state=empty]) > p { min-height:52px; }
+.feedback-agent strong { display:block; font-weight:550; }
+#workspace-sheet-content:is([data-panel=context-summary],[data-panel=comment],[data-panel=comments],[data-panel=agents],[data-panel=retarget]) #workspace-sheet-title { line-height:21px; letter-spacing:0; }
+.feedback-dialog {
+  box-sizing:border-box; width:min(var(--ob-dialog-width),calc(100vw - 32px)); max-height:calc(100dvh - 32px);
+  padding:24px; border:0; border-radius:var(--ob-panel-radius); background:var(--ob-surface); color:var(--ob-ink);
+  overflow:auto; overscroll-behavior:contain; font-family:Inter,system-ui,sans-serif;
+}
+.feedback-dialog[open] { display:flex; flex-direction:column; align-items:flex-start; }
+.feedback-dialog[data-kind=missing-target] { height:var(--ob-missing-target-height); }
+.feedback-dialog[data-kind=permission] { height:var(--ob-permission-height); }
+.feedback-dialog::backdrop { background:#090b0f99; }
+.feedback-dialog header { display:flex; align-self:stretch; align-items:flex-start; justify-content:space-between; gap:12px; }
+.feedback-dialog header h2 { margin:0; font-size:20px; min-height:30px; line-height:28px; }
+.feedback-dialog header button.feedback-cross { margin-top:-4px; background:var(--ob-surface); color:var(--ob-ink); padding:0; }
+.feedback-dialog .feedback-badge { margin-top:22px; min-width:min(219.6px,100%); }
+.feedback-dialog p { margin:24px 0 0; min-height:72px; max-width:100%; }
+.feedback-dialog[data-kind=missing-target] p { margin-top:28px; }
+.feedback-dialog .feedback-error { color:var(--ob-danger); padding:8px 0; overflow-wrap:anywhere; }
+.feedback-dialog-actions { display:grid; width:100%; grid-template-columns:minmax(80px,124fr) minmax(0,288fr); gap:12px; margin-top:auto; padding-top:16px; }
+.feedback-dialog-actions button { min-width:0; }
+@media (prefers-reduced-motion: reduce) {
+  #workspace-drawer .feedback-state button, .feedback-dialog button { transition:none; }
+}

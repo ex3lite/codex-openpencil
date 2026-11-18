@@ -211,3 +211,23 @@ test('source created at the autosave destination by another process is never ove
   await assert.rejects(atomicSave(destination, JSON.stringify(doc('local')), null), error => error.code === 'EEXIST');
   assert.equal(JSON.parse(await readFile(destination)).children[0].name, 'external owner');
 });
+
+test('manual access recovery checks document identity and preserves intervening edits', async t => {
+  const f = await fixture(t);
+  const permission = () => Object.assign(Error('Access denied'), { code: 'EACCES' });
+  f.state.document = doc('local change');
+  f.state.version++;
+  f.persistence.fail(permission());
+  await assert.rejects(f.persistence.flush({docJson:f.snapshot()}), {code:'EACCES'});
+  await assert.rejects(f.persistence.retryAccess('other', f.snapshot()), /состояние/);
+  assert.equal(f.persistence.status().code, 'EACCES');
+  const result = await f.persistence.retryAccess(f.controller.documentId, f.snapshot());
+  assert.equal(result.autosave.state, 'saved');
+  assert.equal(JSON.parse(await readFile(f.file)).children[0].name, 'local change');
+
+  f.persistence.fail(permission());
+  await writeFile(f.file, JSON.stringify(doc('external edit')));
+  await assert.rejects(f.persistence.retryAccess(f.controller.documentId, f.snapshot()), {code:'SOURCE_CHANGED'});
+  await assert.rejects(f.persistence.retryAccess(f.controller.documentId, f.snapshot()), /Повтор доступен/);
+  assert.equal(JSON.parse(await readFile(f.file)).children[0].name, 'external edit');
+});

@@ -1,0 +1,166 @@
+/* Property and fill surfaces from the editable inspector, states and dialogs. */
+#workspace-inspector-empty, #inspector-color-palette {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 24px;
+  overflow: auto;
+  border: 0;
+  border-radius: var(--ob-panel-radius);
+  background: var(--ob-surface);
+  color: var(--ob-ink);
+  box-shadow: 0 4px 16px #0004;
+  font: 400 13px/1.45 Inter, system-ui, sans-serif;
+}
+#workspace-inspector-empty h2, #workspace-inspector-empty h3, #workspace-inspector-empty p,
+#inspector-color-palette h2 { margin: 0; }
+.inspector-surface-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ob-tool-radius);
+  background: transparent;
+  color: var(--ob-ink);
+}
+#workspace-inspector-empty {
+  position: absolute;
+  z-index: 3;
+  top: var(--ob-panel-top);
+  right: var(--ob-inset);
+  width: min(var(--ob-state-width), calc(100vw - 32px));
+  height: min(var(--ob-state-height), calc(100% - var(--ob-panel-top) - var(--ob-inset)));
+}
+#workspace-inspector-empty header {
+  position: relative;
+  box-sizing: border-box;
+  height: 65px;
+  padding-top: 22px;
+  border-bottom: 1px solid var(--ob-border);
+}
+#workspace-inspector-empty header h2 { margin-right: 52px; padding: 0; font: 600 14px/21px Inter, system-ui, sans-serif; }
+#workspace-inspector-empty .inspector-surface-close { position: absolute; top: 16px; right: 0; }
+#workspace-inspector-empty h3 { margin-top: 47px; font: 600 20px/30px Inter, system-ui, sans-serif; }
+#workspace-inspector-empty p { min-height: 52px; margin-top: 14px; color: var(--ob-muted); }
+#workspace-inspector-empty small {
+  display: block;
+  margin: 87px 0 24px;
+  color: var(--ob-muted);
+  font-size: 11px;
+  line-height: 17px;
+}
+html[data-preview=true] #workspace-inspector-empty { display: none; }
+
+.inspector-fields h3 { font: 500 12px/18px Inter, system-ui, sans-serif; }
+.inspector-fields label { font: 400 11px/16px Inter, system-ui, sans-serif; }
+.inspector-fields input {
+  border: 1px solid var(--ob-border);
+  padding: 0 12px;
+  font: 400 12px/1.35 Inter, system-ui, sans-serif;
+}
+.inspector-fields input:focus-visible, .palette-percent:focus-within {
+  outline: 2px solid var(--ob-accent);
+  outline-offset: -2px;
+}
+.inspector-fields [data-inspector-part="family"] { border: 0; }
+.inspector-fields [data-inspector-part="fill-row"] { gap: 12px; padding: 0; background: transparent; }
+.inspector-fields [data-inspector-part="fill-row"] input { padding: 0; border: 0; background: transparent; }
+.fill-swatch {
+  position: relative;
+  border: 0;
+  border-radius: 5px;
+  background: repeating-conic-gradient(var(--ob-border) 0 25%, var(--ob-raised) 0 50%) 0 / 8px 8px;
+}
+.fill-swatch::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--inspected-color);
+  opacity: var(--inspected-opacity, 1);
+}
+#inspector-color-palette .palette-sample { opacity: var(--inspected-opacity, 1); }
+.inspector-alpha { display: flex; align-items: center; justify-content: flex-end; width: 48px; flex: none; color: var(--ob-muted); }
+.inspector-alpha input[data-property="alpha"] { flex: 1; width: 0; color: inherit; }
+.inspector-alpha span, .palette-percent { font-size: 12px; }
+.inspector-fields [data-inspector-part="binding"][data-linked=true] { color: var(--ob-accent); }
+.inspector-fields:has([data-linked=true])::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 570px;
+  width: 16px;
+  height: 16px;
+  background: var(--ob-accent);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-3 -3 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8l-2 2a4.24 4.24 0 0 0 6 6l2-2m4-4 2-2a4.24 4.24 0 0 0-6-6L8 4m-3 9 8-8'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+.inspector-fields [data-inspector-part="binding"][data-linked=false] { left: 16px; }
+
+#inspector-color-palette {
+  position: fixed;
+  inset: auto calc(var(--ob-inspector-width) + 32px) 48px auto;
+  width: min(var(--ob-dialog-width), calc(100vw - 32px));
+  height: var(--ob-palette-height);
+  max-height: calc(100dvh - 64px);
+}
+#inspector-color-palette header {
+  position: relative;
+  box-sizing: border-box;
+  height: 72px;
+  padding-top: 24px;
+}
+#inspector-color-palette h2 { margin-right: 56px; font: 600 20px/30px Inter, system-ui, sans-serif; }
+#inspector-color-palette .inspector-surface-close { position: absolute; right: 0; top: 20px; }
+#inspector-color-palette .palette-sample { height: 88px; }
+#inspector-color-palette .palette-swatches {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 36px));
+  gap: clamp(4px, calc((100vw - 296px) / 5), 16px);
+  margin: 24px 0;
+}
+#inspector-color-palette .palette-swatches button {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--swatch);
+}
+#inspector-color-palette .palette-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
+  gap: 24px;
+  margin-top: 26px;
+}
+#inspector-color-palette .palette-inputs label { display: block; font: 400 11px/17px Inter, system-ui, sans-serif; }
+#inspector-color-palette .palette-inputs input, .palette-percent { margin-top: 9px; padding: 0 12px; }
+.palette-percent {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  border: 1px solid var(--ob-border);
+  border-radius: var(--ob-tool-radius);
+  background: var(--ob-raised);
+  color: var(--ob-ink);
+}
+#inspector-color-palette .palette-percent input {
+  field-sizing: content;
+  width: auto;
+  max-width: calc(100% - 1em);
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  outline: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .inspector-surface-close:hover { background: var(--ob-hover); }
+  .palette-swatches button:hover { outline: 1px solid var(--ob-muted); outline-offset: 2px; }
+}
+@media (max-width: 800px) { #inspector-color-palette { right: var(--ob-inset); } }
+@media (max-width: 400px) {
+  #inspector-color-palette .palette-inputs { grid-template-columns: minmax(0, 1fr) 88px; gap: 12px; }
+}

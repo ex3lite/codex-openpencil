@@ -1,5 +1,22 @@
 /* Generated from OpenBrush-Interface.op by scripts/sync-openbrush-design.mjs. */
 :root {
+  --ob-header-documents-width: 88px;
+  --ob-header-library-width: 112px;
+  --ob-header-context-width: 116px;
+  --ob-header-preview-width: 108px;
+  --ob-header-more-width: 32px;
+  --ob-compact-identity-width: 124px;
+  --ob-preview-action-width: 152px;
+  --ob-preview-header-gap: 12px;
+  --ob-preview-caption-size: 12px;
+  --ob-state-width: 432px;
+  --ob-state-height: 336px;
+  --ob-dialog-width: 472px;
+  --ob-settings-height: 336px;
+  --ob-detail-height: 424px;
+  --ob-palette-height: 344px;
+  --ob-missing-target-height: 296px;
+  --ob-permission-height: 312px;
   --ob-context-card-height: 88px;
   --ob-context-input-height: 124px;
   --ob-inset: 16px;

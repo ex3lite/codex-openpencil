@@ -61,3 +61,16 @@ test('only one panel can reserve delivery, including after reopening the journal
   assert.equal(confirmed.status, 'sent');
   assert.equal((await reopened.list()).length, 1);
 });
+
+test('explicit progress and resolution survive late transport receipts',async t=>{
+  const {journal,args,options}=await fixture(t);
+  await journal.create({...args,prepareDelivery:true});
+  const commentId=args.requestId;
+  await journal.update({commentId,status:'in_progress',agentId:'typography'});
+  assert.equal((await journal.update({commentId,status:'sent'})).status,'in_progress');
+  await journal.update({commentId,status:'resolved',resolution:'Уменьшен размер.'});
+  assert.equal((await journal.update({commentId,status:'uncertain'})).status,'resolved');
+  const [saved]=await new CanvasComments(options).list();
+  assert.equal(saved.agentId,'typography');assert.equal(saved.resolution,'Уменьшен размер.');
+  await assert.rejects(journal.update({commentId,status:'in_progress'}),/завершён/);
+});

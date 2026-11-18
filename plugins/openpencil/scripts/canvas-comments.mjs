@@ -59,11 +59,22 @@ export class CanvasComments {
   update(args) {
     return this.withJournalLock(() => this.updateLocked(args));
   }
-  async updateLocked({ commentId, status }) {
-    if (!['sent', 'uncertain', 'resolved'].includes(status)) throw Error('Invalid comment status');
+  async updateLocked({ commentId, status, agentId, resolution }) {
+    if (!['sent', 'uncertain', 'in_progress', 'resolved'].includes(status)) throw Error('Invalid comment status');
     const comments = await this.list(), comment = comments.find(c => c.id === commentId);
     if (!comment) throw Error('Комментарий не найден в этом документе.');
+    if (agentId !== undefined && (status !== 'in_progress' || typeof agentId !== 'string' || !agentId.trim() || agentId.length > 200)) {
+      throw Error('Укажите идентификатор агента, который начал работу.');
+    }
+    if (resolution !== undefined && (status !== 'resolved' || typeof resolution !== 'string' || !resolution.trim() || resolution.length > 8000)) {
+      throw Error('Добавьте краткий результат к выполненному комментарию.');
+    }
+    // A chat acknowledgement may arrive after the agent has started or finished.
+    if (['sent','uncertain'].includes(status) && ['in_progress','resolved'].includes(comment.status)) return comment;
+    if (comment.status === 'sent' && status === 'uncertain') return comment;
     if (comment.status === 'resolved' && status !== 'resolved') throw Error('Комментарий уже завершён.');
+    if (agentId !== undefined) comment.agentId = agentId;
+    if (resolution !== undefined) comment.resolution = resolution.trim();
     comment.status = status; comment.updatedAt = new Date().toISOString();
     await this.persist(comments); return comment;
   }

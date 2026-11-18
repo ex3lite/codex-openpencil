@@ -11,13 +11,35 @@ const nativeFonts = (()=>{
       if(data.native?.browser && data.status==='ready'&&!data.native.browser.ready)state.append(make('span',' · холст загружает файлы'));
       rows.replaceChildren();
       for(const family of data.families || []) {
-        const row=make('p');row.append(make('strong',family.family),make('span',family.status==='ready'?' · готов':' · доступен частично'));
+        if (family.status === 'partial' || family.status === 'unavailable') {
+          const missing = (family.missingFaces || []).map(face => face.weight + (face.style === 'italic' ? ' курсив' : ''));
+          const fallback = make('div', null, 'library-font-substitutions');
+          fallback.hidden = true;
+          for (const face of family.nearestFaces || []) fallback.append(make('p',
+            family.family + ' · ' + face.requestedWeight + ' → ' + face.availableWeight + (face.style === 'italic' ? ' · курсив' : '')));
+          const actions = [];
+          if (family.nearestFaces?.length) {
+            const reveal = button('Показать замену', () => {
+              fallback.hidden = !fallback.hidden;
+              reveal.querySelector('button').setAttribute('aria-expanded', String(!fallback.hidden));
+            });
+            reveal.querySelector('button').setAttribute('aria-expanded', 'false');
+            actions.push(reveal, fallback);
+          }
+          const description = ['Исходное название шрифта сохранено.'];
+          if (missing.length) description.push('Недоступные начертания: ' + missing.join(', ') + '.');
+          if (family.missingCodepointCount) description.push('Недоступно символов: ' + family.missingCodepointCount + '.');
+          if (family.error) description.push(family.error);
+          let panel;
+          panel = nativeLibraryState({make, button}, {kind:'font', title:'Шрифты макета', badge:'Нужна замена',
+            heading:family.status === 'unavailable' ? family.family + ' недоступен' : 'Частично доступен ' + family.family,
+            description:description.join('\n'), actions, onClose:() => { panel.remove(); summary.focus(); }});
+          rows.append(panel);
+          continue;
+        }
+        const row=make('p');row.append(make('strong',family.family),make('span',family.status==='ready'?' · готов':' · '+(family.status==='disabled'?'автозагрузка отключена':'ожидание')));
         if(family.missingFaces?.length)row.append(make('small',' Не найдены: '+family.missingFaces.map(f=>`${f.weight} ${f.style==='italic'?'курсив':''}`).join(', ')));
-        if(family.nearestFaces?.length){
-          const fallback=make('details');fallback.append(make('summary','Показать замену'));
-          for(const face of family.nearestFaces)fallback.append(make('p',family.family+' · '+face.requestedWeight+' → '+face.availableWeight+(face.style==='italic'?' · курсив':'')));
-          rows.append(row,fallback);
-        }else rows.append(row);
+        rows.append(row);
       }
     }
     details.append(button('Проверить шрифты макета',async()=>{state.textContent='Определяем нужные шрифты…';render(await nativeEditor.call('canvas_fonts_prepare'));}),

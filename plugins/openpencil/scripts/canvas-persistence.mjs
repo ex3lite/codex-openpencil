@@ -97,6 +97,19 @@ export class CanvasPersistence {
     const result = await this.history.record(pending.bytes, { ...pending, force });
     this.pendingHistory = null; return result;
   }
+  retryAccess(documentId, docJson) {
+    return this.enqueue(async () => {
+      this.assertCurrent();
+      if (documentId !== this.documentId || typeof docJson !== 'string') throw Error('Обновите состояние текущего макета.');
+      if (!['EACCES', 'EPERM'].includes(this.error?.code) || this.error.uncertain) {
+        throw Error('Повтор доступен только после отказа в доступе к папке проекта.');
+      }
+      await this.controller.projectWriterLeases?.get(documentId)?.assertOwned();
+      // persist rechecks the live snapshot and disk baseline before publication.
+      this.error = null;
+      return this.persist({ docJson, forceHistory: true });
+    });
+  }
   flush(args = {}) {
     clearTimeout(this.timer); clearTimeout(this.deadline); this.deadline=null;
     return this.enqueue(() => this.persist(args));

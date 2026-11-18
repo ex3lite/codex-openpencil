@@ -156,11 +156,13 @@ ui-button, ui-popover-trigger, ui-dialog-trigger, ui-dialog-close, ui-drawer-clo
 }
 #workspace-bar #workspace-documents, #workspace-bar #workspace-chat, #workspace-bar #workspace-preview,
 #workspace-documents-content button { background: var(--ob-raised); }
-#workspace-documents, #workspace-chat { min-width: 88px; }
-#workspace-library { min-width: 112px; }
-#workspace-context { min-width: 116px; }
-#workspace-preview { min-width: 108px; }
-#workspace-bar #workspace-more-trigger { width: 32px; padding: 0; }
+@media (min-width:661px) {
+  #workspace-bar #workspace-documents, #workspace-bar #workspace-chat { width:var(--ob-header-documents-width); }
+  #workspace-bar #workspace-library { width:var(--ob-header-library-width); padding-inline:4px; }
+  #workspace-bar #workspace-context { width:var(--ob-header-context-width); padding-inline:4px; }
+  #workspace-bar #workspace-preview { width:var(--ob-header-preview-width); padding-inline:4px; }
+}
+#workspace-bar #workspace-more-trigger { width: var(--ob-header-more-width); padding: 0; }
 
 #workspace-more-content {
   display: grid;
@@ -201,7 +203,7 @@ ui-button, ui-popover-trigger, ui-dialog-trigger, ui-dialog-close, ui-drawer-clo
   z-index: 2;
   bottom: var(--ob-dock-inset);
   left: clamp(min(50%, var(--ob-dock-width) / 2 + 8px),
-    calc(50% + (var(--ob-rail-left) - var(--ob-rail-right)) / 2),
+    calc(50% + (max(0px, var(--ob-rail-left) - var(--ob-inset)) - max(0px, var(--ob-rail-right) - var(--ob-inset))) / 2),
     max(50%, 100% - var(--ob-dock-width) / 2 - 8px));
   transform: translateX(-50%);
   width: var(--ob-dock-width);
@@ -320,13 +322,29 @@ ui-button, ui-popover-trigger, ui-dialog-trigger, ui-dialog-close, ui-drawer-clo
 
 html[data-preview=true] #workspace-dock,
 html[data-preview=true] #workspace-inspector-close,
-html[data-preview=true] #workspace-inspector-restore,
-html[data-preview=true] #workspace-bar .workspace-identity,
-html[data-preview=true] #workspace-document-title,
-html[data-preview=true] #workspace-bar #workspace-more,
-html[data-preview=true] #workspace-bar ui-toolbar > :not(:has(#workspace-preview)) { display: none; }
-html[data-preview=true] #workspace-bar #workspace-preview i { display: none; }
-html[data-preview=true] #workspace-preview-caption { display: block; font-weight: 500; color: var(--ob-muted); }
+html[data-preview=true] #workspace-inspector-restore { display:none; }
+#workspace-preview-caption, #workspace-preview-shortcut { display:none; }
+html[data-preview=true]:not([data-display-mode=fullscreen]) #workspace-bar .workspace-identity,
+html[data-preview=true]:not([data-display-mode=fullscreen]) #workspace-document-title,
+html[data-preview=true]:not([data-display-mode=fullscreen]) #workspace-bar #workspace-more,
+html[data-preview=true]:not([data-display-mode=fullscreen]) #workspace-bar ui-toolbar > :not(:has(#workspace-preview)) { display: none; }
+html[data-preview=true]:not([data-display-mode=fullscreen]) #workspace-bar {
+  display:grid;
+  padding-inline:var(--ob-inset);
+  grid-template-columns:minmax(0,var(--ob-preview-action-width)) minmax(0,1fr) minmax(0,var(--ob-preview-action-width));
+  gap:var(--ob-preview-header-gap);
+}
+html[data-preview=true]:not([data-display-mode=fullscreen]) #workspace-preview { width:100%; min-width:0; }
+html[data-preview=true]:not([data-display-mode=fullscreen]) #workspace-preview i { display:none; }
+html[data-preview=true]:not([data-display-mode=fullscreen]) #workspace-preview span { position:static; clip-path:none; }
+html[data-preview=true]:not([data-display-mode=fullscreen]) :is(#workspace-preview-caption,#workspace-preview-shortcut) {
+  display:block; font:400 var(--ob-preview-caption-size)/1.45 Inter,system-ui,sans-serif; color:var(--ob-muted); text-align:center;
+}
+html[data-preview=true]:not([data-display-mode=fullscreen]) #workspace-preview-shortcut { text-align:right; }
+@media (max-width:510px) {
+  html[data-preview=true]:not([data-display-mode=fullscreen]) #workspace-bar { grid-template-columns:auto minmax(0,1fr) auto; }
+}
+
 
 @media (hover: hover) and (pointer: fine) {
   #workspace-bar button:not(:disabled):hover, #workspace-dock button:not(:disabled):hover,
@@ -340,7 +358,7 @@ html[data-preview=true] #workspace-preview-caption { display: block; font-weight
   outline-offset: -2px;
 }
 @media (max-width: 1040px) {
-  .workspace-identity { flex: 0 1 auto; }
+  .workspace-identity { flex: 0 1 var(--ob-compact-identity-width); }
   .workspace-identity strong { flex-basis: auto; }
   #workspace-project { display: none; }
 }

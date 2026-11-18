@@ -5,7 +5,7 @@ const nativeWorkspace = (() => {
   let contextChanged = () => {}, retryContext = () => {}, delivery = {state:'pending'}, contextNotice = '';
   const context = nativeContextState.create();
   const pinnedDrafts = new Map();
-  let activeAttachment;
+  let activeAttachment, agentsKey, feedbackDialog, permissionFailure, retargetDraft;
   const drawer = $('workspace-drawer');
   const documentsDialog = $('workspace-documents-dialog');
   const more = $('workspace-more');
@@ -16,6 +16,12 @@ const nativeWorkspace = (() => {
     if (className) element.className = className; return element;
   }
   function button(text, action, className) { return nativeUI.button(text, action, className); }
+  function closeIcon(control, label) {
+    const trigger = control.querySelector('button') || control;
+    const icon = make('i');
+    icon.dataset.obIcon = 'close'; icon.setAttribute('aria-hidden','true');
+    trigger.replaceChildren(icon); trigger.setAttribute('aria-label',label);
+  }
   function rememberDraft() {
     const text = $('comment-text');
     if (mode === 'comment' && target && text) commentDraft = {target, text:text.value};
@@ -29,7 +35,7 @@ const nativeWorkspace = (() => {
   nativeUI.onClose(closed);
   function show(next, title) {
     rememberDraft(); mode = next; drawer.replaceChildren();
-    const active = {context:'context',comment:'comment',comments:'comments',agents:'agents',library:'library',documents:'documents'}[next];
+    const active = {context:'context','context-summary':'context',comment:'comment',comments:'comments',agents:'agents',library:'library',documents:'documents'}[next];
     for (const b of document.querySelectorAll('button[aria-controls=workspace-sheet-content]')) b.setAttribute('aria-expanded', String(b.id === `workspace-${active}`));
     $('workspace-sheet-content').dataset.panel = next;
     $('workspace-layer-resources').setAttribute('aria-expanded', String(next === 'library'));
@@ -41,11 +47,11 @@ const nativeWorkspace = (() => {
     return selection.nodes.map(n => n.name || n.type).join(', ');
   }
   function contextData() { return context.payload(); }
-  function contextEdit(action) {
-    action(); contextNotice = ''; contextChanged(); renderContext();
+  function contextEdit(action, pinned = mode === 'context') {
+    action(); contextNotice = ''; contextChanged(); renderContext(pinned);
     $('workspace-context-label').textContent = `Контекст · ${context.attachments.length}`;
   }
-  async function addContext() {
+  async function addContext(pinned = true) {
     const current = await nativeEditor.captureSelection();
     if (context.observe(current)) contextNotice = 'Открыт другой макет. Вложения предыдущего макета удалены.';
     if (state?.documentId !== current.documentId || state?.canvasId !== current.canvasId) pinnedDrafts.clear();
@@ -56,7 +62,7 @@ const nativeWorkspace = (() => {
         requestId:crypto.randomUUID(), documentId:current.documentId, canvasId:current.canvasId,
         path:current.layerPath?.join(' / ') || '', text:''
       });
-    });
+    }, pinned);
   }
   function updateContextDelivery() {
     const output = $('context-delivery'); if (!output) return;
@@ -66,54 +72,87 @@ const nativeWorkspace = (() => {
     output.dataset.error = String(delivery.state === 'error');
     const retry = $('context-retry'); if (retry) retry.hidden = delivery.state !== 'error';
   }
+  function badge(label, tone) {
+    const element = make('span', label, 'feedback-badge');
+    element.dataset.tone = tone;
+    return element;
+  }
   function refreshContextSelection() {
     const selection = $('context-selection'), add = $('context-add');
     const footer = $('context-selection-tools');
     if (footer) footer.hidden = context.available && context.selectionAttached;
-    if (selection) selection.textContent = context.available ? describe(state?.selection) : 'Холст временно недоступен. Вложения сохранены в панели.';
+    if (selection) selection.textContent = !context.available ? 'Холст временно недоступен.' :
+      !state?.selection?.count ? 'Сначала выберите слой' : describe(state.selection);
     if (add) add.disabled = !context.available || !state?.selection?.count || !nativeBridge.capabilities.updateModelContext;
   }
-  function renderContext() {
+  function attachmentCard(attachment, active, pinned) {
+    const name = attachment.nodes.map(node => node.name || node.type || node.id).join(', ');
+    const draft = pinnedDrafts.get(attachment.id);
+    const item = make('article', null, 'item context-attachment');
+    const select = button(name, () => {activeAttachment = attachment.id;renderContext(true);});
+    const trigger = select.querySelector('button') || select;
+    trigger.setAttribute('aria-pressed',String(pinned && attachment.id === active.id));
+    const remove = button('Удалить из контекста', () => contextEdit(() => {
+      pinnedDrafts.delete(attachment.id);context.remove(attachment.id);
+    }), 'context-remove');
+    if (!pinned) closeIcon(remove, 'Удалить из контекста');
+    item.append(select,remove,make('small',draft?.path || `Слоёв: ${attachment.nodeIds.length} · версия ${attachment.capturedVersion}`));
+    return item;
+  }
+  function renderContextSummary(attachments) {
+    show('context-summary', attachments.length ? `Контекст чата · ${attachments.length}` : 'Контекст чата');
+    const body = make('section', null, 'feedback-state');
+    body.dataset.state = !attachments.length ? 'empty' : delivery.state;
+    if (!attachments.length) {
+      body.append(make('h2','Здесь пока ничего нет'),make('p','Выберите слой на холсте и нажмите\n«В контекст». Обычный клик его не добавляет.'));
+      const footer = make('div',null,'feedback-footer');
+      const add = button('В контекст', () => addContext(false)); add.id='context-add';
+      const hint = make('small'); hint.id='context-selection';
+      footer.append(add,hint); body.append(footer);
+    } else if (delivery.state === 'error') {
+      const heading = make('h2');
+      const inspect = button(attachments.length === 1 ? 'Слой остался во вложениях' : 'Слои остались во вложениях', () => renderContext(true), 'feedback-error-link');
+      (inspect.querySelector('button') || inspect).title = 'Открыть вложения';
+      heading.append(inspect);
+      body.append(badge('Передача не подтверждена','danger'),heading,
+        make('p','Codex не подтвердил получение контекста.\nПроверьте чат и повторите передачу.'));
+      const retry = button('Повторить передачу',retryContext,'feedback-retry');
+      body.append(retry);
+    } else {
+      for (const attachment of attachments) body.append(attachmentCard(attachment, attachment, false));
+      const label = delivery.state === 'accepted' ? 'Передан в Codex' : delivery.state === 'unsupported' ? 'Передача недоступна' : 'Передаём в Codex…';
+      body.append(badge(label, delivery.state === 'accepted' ? 'success' : 'accent'),
+        make('p','Вложение закреплено. Выбор другого слоя\nне меняет контекст этого сообщения.'));
+    }
+    body.setAttribute('aria-live','polite'); drawer.append(body); refreshContextSelection();
+  }
+  function renderContext(pinned = true) {
     const attachments = context.attachments;
     const active = attachments.find(item => item.id === activeAttachment) || attachments.at(-1);
-    activeAttachment = active?.id;
+    if (!pinned || !active) return renderContextSummary(attachments);
+    activeAttachment = active.id;
     show('context', 'Контекст чата');
     const selection = make('p'); selection.id = 'context-selection';
     const add = button('Добавить в контекст', addContext, 'primary'); add.id = 'context-add';
-    const flow=make('div',null,'context-panel-flow');
+    const flow = make('div',null,'context-panel-flow');
     drawer.append(flow);
-    if (!active) flow.append(make('h2','Здесь пока ничего нет'), make('p','Выберите слой на холсте и нажмите «В контекст».'));
-    else {
-      flow.append(make('p','Только то, что вы прикрепили','context-subtitle'),
-        make('h3',`Прикреплено · ${attachments.length}`,'context-count'));
-      for (const attachment of attachments) {
-        const name = attachment.nodes.map(node => node.name || node.type || node.id).join(', ');
-        const draft = pinnedDrafts.get(attachment.id);
-        const item = make('article', null, 'item context-attachment');
-        const select = button(name, () => {activeAttachment = attachment.id;renderContext();});
-        const trigger = select.querySelector('button') || select;
-        trigger.setAttribute('aria-pressed',String(attachment.id === active.id));
-        const remove = button('Удалить из контекста', () => contextEdit(() => {
-          pinnedDrafts.delete(attachment.id);context.remove(attachment.id);
-        }), 'context-remove');
-        item.append(select,remove,make('small',draft?.path || `Слоёв: ${attachment.nodeIds.length} · версия ${attachment.capturedVersion}`));
-        flow.append(item);
-      }
-      flow.append(make('p','Закреплено. Следующее выделение не изменит эту цель.','context-target-note'));
-      const draft = pinnedDrafts.get(active.id);
-      if(draft && nativeBridge.capabilities.message?.text) {
-        const label = make('label','Комментарий к слою «'+active.nodes.map(node=>node.name).join(', ')+'»');
-        label.htmlFor='pinned-comment-text';
-        const text=make('textarea');text.id=label.htmlFor;text.maxLength=8000;text.value=draft.text;
-        text.placeholder='Что изменить?';text.readOnly=sending;
-        const send=button('Отправить в Codex',()=>submitComment(draft.text,send,{
-          ...draft,selection:{pageId:active.pageId,nodeIds:active.nodeIds},attachmentId:active.id
-        }),'primary');
-        send.disabled=sending || !draft.text.trim();
-        text.oninput=()=>{draft.text=text.value;send.disabled=sending || !draft.text.trim();};
-        const editor=make('div',null,'pinned-comment');
-        editor.append(label,text,send);flow.append(editor);
-      }
+    flow.append(make('p','Только то, что вы прикрепили','context-subtitle'),
+      make('h3',`Прикреплено · ${attachments.length}`,'context-count'));
+    for (const attachment of attachments) flow.append(attachmentCard(attachment, active, true));
+    flow.append(make('p','Закреплено. Следующее выделение не изменит эту цель.','context-target-note'));
+    const draft = pinnedDrafts.get(active.id);
+    if(draft && nativeBridge.capabilities.message?.text) {
+      const label = make('label','Комментарий к слою «'+active.nodes.map(node=>node.name).join(', ')+'»');
+      label.htmlFor='pinned-comment-text';
+      const text=make('textarea');text.id=label.htmlFor;text.maxLength=8000;text.value=draft.text;
+      text.placeholder='Что изменить?';text.readOnly=sending;
+      const send=button('Отправить в Codex',()=>submitComment(draft.text,send,{
+        ...draft,version:active.capturedVersion, selection:{pageId:active.pageId,nodeIds:active.nodeIds,nodes:active.nodes,count:active.nodeIds.length},attachmentId:active.id
+      }),'primary');
+      send.disabled=sending || !draft.text.trim();
+      text.oninput=()=>{draft.text=text.value;send.disabled=sending || !draft.text.trim();};
+      const editor=make('div',null,'pinned-comment');
+      editor.append(label,text,send);flow.append(editor);
     }
     const footer = make('div',null,'context-selection-tools');
     footer.id = 'context-selection-tools';
@@ -131,10 +170,6 @@ const nativeWorkspace = (() => {
 
     refreshContextSelection(); updateContextDelivery();
   }
-  function targetBlock(selection) {
-    const block = make('div', null, 'target'); block.append(make('strong', describe(selection)));
-    block.append(make('small', `Слои: ${selection.nodeIds.join(', ')} · версия ${target.version}`)); return block;
-  }
   async function captureComment() {
     if(!nativeBridge.capabilities.message?.text) throw Error('Codex не предоставил отправку комментариев из этой панели. Комментарий можно написать в текущем чате.');
     rememberDraft();
@@ -144,21 +179,70 @@ const nativeWorkspace = (() => {
     target = { ...current, requestId: crypto.randomUUID() };
     renderComment('');
   }
-  async function retargetComment(text) {
-    const current=await nativeEditor.captureSelection();
-    if (!current.selection?.count) {nativeEditor.status('Сначала выберите другой слой на холсте.');return;}
-    target={...current,requestId:crypto.randomUUID()};commentDraft=null;
-    renderComment(text);
+  function differentTarget(current, captured) {
+    const selection = current?.selection, previous = captured.selection;
+    return current?.documentId === captured.documentId && current.canvasId === captured.canvasId &&
+      selection?.count > 0 && (selection.pageId !== previous.pageId || selection.nodeIds.length !== previous.nodeIds.length ||
+        selection.nodeIds.some(id => !previous.nodeIds.includes(id)));
+  }
+  function chooseTarget(captured, text) {
+    close();
+    target = captured; commentDraft = {target, text}; retargetDraft = commentDraft;
+    show('retarget', 'Другая цель комментария');
+    const body = make('div',null,'feedback-state');
+    const confirm = button('Закрепить выделение', async () => {
+      const current = await nativeEditor.captureSelection();
+      if (!differentTarget(current,captured)) throw Error('Выберите другой слой на холсте.');
+      target = {...current, requestId:crypto.randomUUID()}; retargetDraft = null;
+      if (captured.attachmentId) {
+        const draft = pinnedDrafts.get(captured.attachmentId);
+        if (draft?.requestId === captured.requestId) draft.text = '';
+      }
+      renderComment(text);
+    }, 'primary');
+    confirm.id='retarget-confirm'; confirm.disabled = !differentTarget(state,captured);
+    body.append(make('p','Выберите другой слой на холсте или в списке слоёв.'),confirm); drawer.append(body);
   }
   function renderComment(previousText) {
-    show('comment', 'Комментарий к выделению'); drawer.append(targetBlock(target.selection));
-    const label = make('label', 'Что изменить?'); label.htmlFor = 'comment-text';
-    const text = document.createElement('textarea'); text.id = 'comment-text'; text.maxLength = 8000;
-    text.placeholder = 'Например: увеличь отступы у этой кнопки';text.value=previousText;
-    const send = button('Отправить в Codex', () => submitComment(text.value, send), 'primary'); send.disabled = !previousText.trim();
+    show('comment', 'Комментарий к слою');
+    const body = make('section',null,'feedback-state'); body.dataset.state='draft';
+    const label = make('label',[describe(target.selection), target.layerPath?.at(-1)].filter(Boolean).join(' / '),'feedback-target');
+    label.htmlFor = 'comment-text'; label.title = `Слои: ${target.selection.nodeIds.join(', ')} · версия ${target.version}`;
+    const text = make('textarea'); text.id = label.htmlFor; text.maxLength = 8000; text.readOnly=sending;
+    text.placeholder = 'Что изменить?';text.value=previousText;
+    const send = button('Отправить в Codex', () => submitComment(text.value, send), 'primary');
+    send.disabled = sending || !previousText.trim();
     text.oninput = () => { send.disabled = !text.value.trim() || sending; };
-    drawer.append(label, text, make('p', 'Комментарий сохранится в проекте вместе с точной целью. Следующее выделение его не изменит.'));
-    const actions = make('div', null, 'actions'); actions.append(button('Выбрать другую цель', () => retargetComment(text.value)), send); drawer.append(actions); text.focus();
+    const footer = make('div',null,'feedback-footer');
+    footer.append(send,button('Цель закреплена',()=>chooseTarget(target,text.value),'feedback-target-action'));
+    const action = footer.lastElementChild?.querySelector('button');
+    if (action) { action.title = 'Выбрать другую цель'; action.setAttribute('aria-label',action.title); }
+    body.append(label,text,footer); drawer.append(body); text.focus();
+  }
+  function modal({kind,title,description,status,actionLabel,action}) {
+    feedbackDialog?.close();
+    const dialog = make('dialog',null,'feedback-dialog'); dialog.dataset.kind = kind;
+    dialog.setAttribute('data-openbrush-ui',''); dialog.setAttribute('aria-labelledby','feedback-dialog-title');
+    dialog.setAttribute('aria-describedby','feedback-dialog-description');
+    const heading = make('header'), caption = make('h2',title); caption.id='feedback-dialog-title';
+    const cross = button('×',()=>dialog.close(),'feedback-cross');
+    closeIcon(cross, 'Закрыть');
+    heading.append(caption,cross); dialog.append(heading);
+    if (status) dialog.append(badge(status,'danger'));
+    const message = make('p',description); message.id='feedback-dialog-description';
+    const error = make('small',null,'feedback-error'); error.setAttribute('role','alert'); error.hidden = true;
+    const actions = make('div',null,'feedback-dialog-actions');
+    const confirm = button(actionLabel,async () => {
+      if (confirm.disabled) return;
+      confirm.disabled = true;
+      try { await action(dialog); }
+      catch (failure) { error.hidden = false; error.textContent = failure.message; }
+      finally { confirm.disabled = false; }
+    },'primary');
+    actions.append(button('Закрыть',()=>dialog.close()),confirm);
+    dialog.append(message,error,actions);
+    dialog.addEventListener('close',()=>{ if (feedbackDialog === dialog) feedbackDialog = null; dialog.remove(); },{once:true});
+    document.body.append(dialog); feedbackDialog = dialog; dialog.showModal(); return dialog;
   }
   async function submitComment(text, control, captured = target) {
     if (sending || !captured || !text.trim()) return;
@@ -176,7 +260,7 @@ const nativeWorkspace = (() => {
         let status='sent';
         try {
           const result=await nativeBridge.request('ui/message',{role:'user',content:[{type:'text',text:
-            `Комментарий OpenBrush ${comment.id}\n${JSON.stringify(comment)}\nПрочитай canvas_comments. Измени только закреплённые слои; при изменившейся версии проверь их перед правкой. После проверки отметь комментарий выполненным.`}]});
+            `Комментарий OpenBrush ${comment.id}\n${JSON.stringify(comment)}\nПрочитай canvas_comments. Когда начнёшь работу, отметь комментарий in_progress. Измени только закреплённые слои; при изменившейся версии проверь их перед правкой. После проверки отметь комментарий resolved и укажи результат в resolution.`}]});
           if(result?.isError)throw Error('Codex не принял сообщение');
         } catch {status='uncertain';}
         await nativeEditor.call('canvas_comment_update',{commentId:comment.id,status});
@@ -193,39 +277,95 @@ const nativeWorkspace = (() => {
       }
     } catch(error) {
       if(error.code!=='COMMENT_TARGET_MISSING' || !ownsView())throw error;
-      target=captured;
-      show('missing-target','Слой больше недоступен');
-      drawer.append(make('p','Цель комментария удалена из макета.'),make('blockquote',text),
-        button('Выбрать другую цель',()=>retargetComment(text),'primary'),button('Закрыть',close));
-      commentDraft={target,text};
+      close(); target=captured; commentDraft={target,text};
+      modal({kind:'missing-target', title:'Слой больше недоступен',
+        description:'Цель комментария удалена из макета.\nТекст черновика сохранён. Выберите другой\nслой, прежде чем отправлять комментарий.',
+        actionLabel:'Выбрать другую цель',action:dialog=>{dialog.close(); chooseTarget(captured,text);}});
     } finally {
       sending=false;control.disabled=false;
       if(mode==='context')renderContext();
     }
   }
   async function renderComments() { paintComments(await nativeEditor.call('canvas_comments')); }
+  function participants(activity) {
+    return [...(activity?.parent ? [activity.parent] : []), ...(activity?.agents || [])];
+  }
   function paintComments(comments) {
-    commentsKey=JSON.stringify(comments);
-    show('comments', 'Комментарии'); drawer.append(button('К выделенному элементу', captureComment, 'primary'));
-    if (!comments.length) drawer.append(make('p', 'Выделите элемент и оставьте первый комментарий.'));
+    commentsKey = JSON.stringify([comments,state?.agents]);
+    show('comments', `Комментарии · ${comments.length}`);
+    if (!comments.length) {
+      const empty = make('section',null,'feedback-state');
+      empty.append(make('p','Выделите элемент и оставьте первый комментарий.'), button('К выделенному элементу', captureComment));
+      drawer.append(empty);
+    }
     for (const c of comments.slice().reverse()) {
-      const item = make('article', null, 'item'); item.append(make('strong', c.nodes.map(n => n.name).join(', ')), make('p', c.text));
-      const labels = {draft:'Сохранён',sent:'Передан в чат',uncertain:'Отправка не подтверждена',resolved:'Выполнен'};
-      item.append(make('small', `${labels[c.status]} · ${c.nodeIds.join(', ')} · версия ${c.version}`));
-      if (c.status !== 'resolved') item.append(button('Отметить выполненным', async () => {
-        await nativeEditor.call('canvas_comment_update', { commentId:c.id, status:'resolved' }); await renderComments();
+      const item = make('article',null,'feedback-state feedback-comment'); item.dataset.state = c.status;
+      const statuses = {draft:['Сохранён','muted'],sent:['Передан в чат','success'],uncertain:['Отправка не подтверждена','danger'],
+        in_progress:['В работе','accent'],resolved:['Выполнено','success']};
+      item.append(badge(...(statuses[c.status] || ['Статус неизвестен','muted'])));
+      const name = c.nodes.map(node => node.name || node.id).join(', ');
+      const detail = make('details',null,'feedback-comment-detail');
+      detail.append(make('summary',name),make('small',`Слои: ${c.nodeIds.join(', ')} · версия ${c.version}`));
+      if (c.status !== 'resolved') detail.append(button('Отметить выполненным', async () => {
+        await nativeEditor.call('canvas_comment_update',{commentId:c.id,status:'resolved'}); await renderComments();
       }));
+      if (c.status === 'uncertain') {
+        item.append(make('h2','Комментарий сохранён в проекте'),make('p','Проверьте, появился ли он в чате.\nПовторная отправка может создать дубль.'));
+        detail.querySelector('summary').textContent = 'Новая отправка — только явным действием.';
+        detail.append(make('small',name),make('p',c.text)); item.append(detail);
+      } else {
+        item.append(detail,make('p',c.resolution || c.text));
+        if (c.status === 'resolved') item.append(button('Показать слой', () => {
+          nativeEditor.send({type:'op-bridge/reveal-layers',pageId:c.pageId,nodeIds:c.nodeIds});
+        },'feedback-reveal'));
+        if (c.status === 'in_progress' && c.agentId) {
+          const agent = participants(state?.agents).find(actor => actor.agentId === c.agentId);
+          if (agent) {
+            const foot = make('div',null,'feedback-agent');
+            const actor = make('strong',agent.name); actor.style.color=agent.color;
+            foot.append(actor,make('small',agent.activity)); item.append(foot);
+          }
+        }
+      }
       drawer.append(item);
     }
   }
-  async function renderAgents() {
-    const activity = await nativeEditor.call('canvas_agents'); show('agents', 'Локальные агенты');
-    drawer.append(make('p', 'До 10 агентов Codex. У каждого — своё имя, цвет и область работы. Назначить задачи можно в этом чате.'));
-    const participants=[...(activity.parent?[activity.parent]:[]),...(activity.agents||[])];
-    if (!participants.length) drawer.append(make('p', 'Сейчас никто не редактирует макет.'));
-    for (const agent of participants) {
-      const item = make('article', null, 'item'); const name = make('strong', agent.name); name.style.color = agent.color;
-      item.append(name, make('small', agent.rootIds.join(', ')), make('p', agent.activity || 'Работает с выделенной областью')); drawer.append(item);
+  function paintAgents(activity) {
+    agentsKey = JSON.stringify(activity);
+    const actors = participants(activity);
+    const children = activity?.agents?.length || 0;
+    const limit = activity?.maxAgents || 10;
+    // The coordinator has presence, but does not consume an assignment slot.
+    show('agents', `Локальные агенты · ${children} / ${limit}`);
+    const body = make('section',null,'feedback-state feedback-agents');
+    if (actors.length) body.append(badge(actors.length > 1 ? 'Работают на одном холсте' : 'На холсте','accent'));
+    else body.append(make('p','Сейчас никто не редактирует макет.'));
+    for (const agent of actors) {
+      const item = make('div',null,'feedback-agent');
+      const name = make('strong',agent === activity.parent ? `${agent.name} · Координатор` : agent.name);
+      name.style.color = agent.color;
+      const scope = (agent.rootIds || []).join(', ');
+      item.append(name,make('small',[agent.activity,scope].filter(Boolean).join(' / ')));
+      body.append(item);
+    }
+    drawer.append(body);
+  }
+  async function renderAgents() { paintAgents(await nativeEditor.call('canvas_agents')); }
+  function permissionDenied(saving) {
+    return saving?.state === 'error' && (['EACCES','EPERM'].includes(saving.code) || (!saving.code && /EACCES|EPERM|permission denied|operation not permitted|нет доступа/i.test(saving.error || '')));
+  }
+  function showSaveError() {
+    const saving = state?.autosave;
+    if (permissionDenied(saving)) {
+      const documentId = state.documentId;
+      modal({kind:'permission',title:'Нет доступа к папке проекта',status:'Автосохранение приостановлено',
+        description:'Изменения остаются на открытом холсте.\nПроверьте доступ к папке проекта\nи не закрывайте редактор до восстановления.',
+        actionLabel:'Проверить снова',action:async dialog=>{await nativeEditor.retryAutosave(documentId); dialog.close();}});
+    } else {
+      show('save-error','Автосохранение приостановлено');
+      drawer.append(make('h2','Изменения остаются на открытом холсте.'));
+      if(saving?.error)drawer.append(make('p',saving.error));
+      drawer.append(button('Закрыть',close));
     }
   }
   async function expand() {
@@ -242,8 +382,15 @@ const nativeWorkspace = (() => {
     if (result?.mode !== 'inline') throw Error('Codex не подтвердил возврат к чату.');
     nativeBridge.setDisplayMode(result.mode); updateExpand();
   }
+  function previewLabel(active) {
+    const back = nativeBridge.context.displayMode === 'fullscreen' ? 'В редактор' : 'К редактору';
+    $('workspace-preview-label').textContent = active ? back : 'Проверить';
+    $('workspace-preview').setAttribute('aria-label', active ? back : 'Проверить прототип');
+  }
   function updateExpand() {
     const value=nativeBridge.context.displayMode;
+    document.documentElement.dataset.displayMode = value || 'inline';
+    previewLabel($('workspace-preview').getAttribute('aria-pressed') === 'true');
     $('toolbar-chat').hidden=value!=='fullscreen';
     $('workspace-expand').textContent = value === 'fullscreen' ? 'Свернуть редактор' : 'Развернуть редактор';
     if(nativeEditor.ready && ['inline','fullscreen'].includes(value) && displayedMode!==value) {
@@ -252,13 +399,7 @@ const nativeWorkspace = (() => {
   }
   const openLibrary=()=>nativeLibrary.open({show,drawer,make,button}).catch(e=>nativeEditor.status(e.message,true));
   $('workspace-library').onclick=openLibrary;
-  $('workspace-save-state').onclick=()=>{
-    const reason=state?.autosave?.error || '';
-    show('save-error',/EACCES|EPERM|permission denied|нет доступа/i.test(reason)?'Нет доступа к папке проекта':'Автосохранение приостановлено');
-    drawer.append(make('h2','Изменения остаются на открытом холсте.'));
-    if(reason)drawer.append(make('p',reason));
-    drawer.append(button('Закрыть',close));
-  };
+  $('workspace-save-state').onclick=showSaveError;
   documentsDialog.addEventListener('openchange', event => {
     if (!event.detail.value) {
       nativeDocuments.invalidate();
@@ -308,7 +449,7 @@ const nativeWorkspace = (() => {
   $('workspace-sidebar').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-sidebar'});
   $('workspace-preview').onclick=()=>nativeEditor.send({type:'op-bridge/toggle-preview'});
   $('workspace-fit').onclick=()=>nativeEditor.send({type:'op-bridge/fit-content'});
-  $('workspace-context').onclick = renderContext;
+  $('workspace-context').onclick = () => renderContext(false);
   $('workspace-comment').onclick = () => captureComment().catch(e => nativeEditor.status(e.message,true));
   $('workspace-comments').onclick = () => renderComments().catch(e => nativeEditor.status(e.message,true));
   $('workspace-agents').onclick = () => renderAgents().catch(e => nativeEditor.status(e.message,true));
@@ -323,6 +464,10 @@ const nativeWorkspace = (() => {
   }, true);
   nativeBridge.onContext(updateExpand);
   nativeEditor.onEvent(event => {
+    if(event.type==='op-shell/reveal-result') {
+      if (event.ok) { if(mode==='comments') close(); }
+      else nativeEditor.status('Закреплённый слой больше недоступен.',true);
+    }
     if(event.type==='op-bridge/ready') updateExpand();
     if(event.type==='op-shell/panels-state') {
       $('workspace-sidebar').textContent=event.layers?'Скрыть слои':'Показать слои';
@@ -353,24 +498,28 @@ const nativeWorkspace = (() => {
     }
     if(event.type==='op-shell/preview-state') {
       $('workspace-preview').setAttribute('aria-pressed',String(event.active));
-      $('workspace-preview-label').textContent=event.active?'К редактору':'Проверить';
-      $('workspace-preview').setAttribute('aria-label', event.active ? 'К редактору' : 'Проверить прототип');
+      previewLabel(event.active);
       document.documentElement.dataset.preview = String(event.active);
     }
     if (event.type === 'op-shell/library') void openLibrary();
     if (event.type === 'op-shell/display-mode') void expand().catch(e => nativeEditor.status(e.message,true));
     if (event.type === 'op-shell/document-replaced') {
       if (layerQuery.value) { layerQuery.value = ''; layerQuery.oninput(); }
-      target = null; commentDraft=null; pinnedDrafts.clear();activeAttachment=null;context.reset(); contextChanged();
+      feedbackDialog?.close(); retargetDraft=null; target = null; commentDraft=null; pinnedDrafts.clear();activeAttachment=null;context.reset(); contextChanged();
       $('workspace-context-label').textContent = 'Контекст · 0'; close(); documentsDialog.open = false;
     }
   });
   return {
     contextData,
     onContextChange(changed, retry) { contextChanged = changed; retryContext = retry; },
-    contextDelivery(status) { delivery = status; if (mode === 'context') updateContextDelivery(); },
+    contextDelivery(status) {
+      const changed = delivery.state !== status.state; delivery = status;
+      if (mode === 'context') updateContextDelivery();
+      if (mode === 'context-summary' && changed && context.attachments.length) renderContext(false);
+    },
     contextUnavailable() {
       context.unavailable();
+      if(mode === 'context-summary') refreshContextSelection();
       if (mode === 'context') {
         refreshContextSelection(); $('context-details').textContent = JSON.stringify(contextData(),null,2);
       }
@@ -378,9 +527,13 @@ const nativeWorkspace = (() => {
     update(current) {
       state = current;
       const switched = context.observe(current);
-      if (switched) {pinnedDrafts.clear();activeAttachment=null;commentDraft=null; target=null; contextChanged(); if(layerQuery.value){layerQuery.value=''; layerQuery.oninput();}}
+      if (switched) {feedbackDialog?.close(); retargetDraft=null; if(mode && !['context','context-summary','library'].includes(mode))close(); pinnedDrafts.clear();activeAttachment=null;commentDraft=null; target=null; contextChanged(); if(layerQuery.value){layerQuery.value=''; layerQuery.oninput();}}
       if (switched) contextNotice = 'Открыт другой макет. Вложения предыдущего макета удалены.';
       const saving=current.autosave;
+      const permissionKey = permissionDenied(saving) ? current.documentId : null;
+      if (permissionKey && permissionFailure !== permissionKey) showSaveError();
+      permissionFailure = permissionKey;
+      if (!permissionKey && feedbackDialog?.dataset.kind === 'permission' && saving?.state === 'saved') feedbackDialog.close();
       const failed=['error','snapshot-rejected'].includes(saving?.state);
       $('workspace-save-state').hidden=!failed && saving?.state!=='pending';
       $('workspace-save-state').textContent=failed?'Не сохранено':saving?.state==='pending'?'Сохраняется…':'';
@@ -407,11 +560,16 @@ const nativeWorkspace = (() => {
       const agentCount=(current.agents?.agents?.length||0)+(current.agents?.parent?1:0);
       $('workspace-agents').hidden=false;
       $('workspace-agents').textContent=`Агенты · ${agentCount}`;
-      if(mode==='comments' && JSON.stringify(current.comments||[])!==commentsKey)paintComments(current.comments||[]);
+      if(mode==='retarget' && retargetDraft) $('retarget-confirm').disabled=!differentTarget(current,retargetDraft.target);
+      if(mode==='agents' && JSON.stringify(current.agents)!==agentsKey) paintAgents(current.agents);
+      if(mode==='context-summary') { if(switched) renderContext(false); else refreshContextSelection(); }
+      if(mode==='comments' && JSON.stringify([current.comments||[],current.agents])!==commentsKey)paintComments(current.comments||[]);
       if (mode === 'context') {
         if (switched) renderContext();
-        refreshContextSelection();
-        $('context-details').textContent=JSON.stringify(contextData(),null,2);
+        else {
+          refreshContextSelection();
+          $('context-details').textContent=JSON.stringify(contextData(),null,2);
+        }
       }
       updateExpand();
     },

@@ -4,19 +4,19 @@ import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 const source=await readFile(new URL('../plugins/openpencil/ui/native-library.js',import.meta.url),'utf8');
 test('global library opens the complete converted resource through the project workflow',async()=>{
- const controls=[],calls=[];let rebound;
+ const controls=[],calls=[];let opened;
  const make=(tag,text)=>({tag,text,append(){},setAttribute(){},replaceChildren(){}});
  const context=vm.createContext({document:{createElement:make},
   nativeEditor:{async flush(){return {docJson:'latest-ui'};},async call(name,args){calls.push({name,args});
-    if(name==='canvas_community_import')return {documentId:'imported-doc',filePath:'/project/Full kit.op'};
+    if(name==='canvas_community_import')return {documentId:'previous-doc',imported:{id:'imported-doc'}};
     if(name==='canvas_community_settings')return {autonomous:true,verifyLicenses:true};
-    return {assets:[{id:'fixture',name:'Kit',kind:'ui-kit',format:'fig',author:'Author',license:{spdx:'CC-BY-4.0'},available:true,sourceUrl:'https://example.com'}]};},status(){},rebind(result){rebound=result;}},nativeBridge:{}});
+    return {assets:[{id:'fixture',name:'Kit',kind:'ui-kit',format:'fig',author:'Author',license:{spdx:'CC-BY-4.0'},available:true,sourceUrl:'https://example.com'}]};},status(){},async switchDocument(id){opened=id;}},nativeBridge:{}});
  vm.runInContext(source+'\nglobalThis.library=nativeLibrary;',context);
  await context.library.open({show(){},drawer:make('div'),make,button(text,action){const b={text,action,setAttribute(){}};controls.push(b);return b;}});
  assert.equal(calls.find(c=>c.name==='canvas_community_search').args.scope,'global');
  await controls.find(c=>c.text==='Открыть набор в проекте').action();
- assert.deepEqual(JSON.parse(JSON.stringify(calls.find(c=>c.name==='canvas_community_import').args)),{assetId:'fixture',docJson:'latest-ui'});
- assert.equal(rebound.documentId,'imported-doc');
+ assert.deepEqual(JSON.parse(JSON.stringify(calls.find(c=>c.name==='canvas_community_import').args)),{assetId:'fixture'});
+ assert.equal(opened,'imported-doc');
  await controls.find(c=>c.text==='В этом проекте').action();
  assert.equal(calls.filter(c=>c.name==='canvas_community_search').at(-1).args.scope,'project');
 });

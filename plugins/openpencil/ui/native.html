@@ -52,7 +52,8 @@
       </select>
     </ui-popover-content>
   </ui-popover>
-  <strong id="workspace-preview-caption" hidden>Проверка прототипа</strong>
+  <span id="workspace-preview-caption">Проверка прототипа</span>
+  <kbd id="workspace-preview-shortcut">Esc</kbd>
 </header>
 <div id="workspace-layer-tabs" data-openbrush-ui hidden>
   <ui-toolbar aria-label="Панель слоёв">
@@ -76,6 +77,15 @@
   <ui-button><button class="primary inspector-action" id="workspace-inspector-attach" type="button" disabled><i data-ob-icon="context" aria-hidden="true"></i><span>В контекст чата</span></button></ui-button>
   <ui-button><button class="inspector-action" id="workspace-inspector-comment" type="button" disabled><i data-ob-icon="comment" aria-hidden="true"></i><span>Комментировать</span></button></ui-button>
 </section>
+<section id="workspace-inspector-empty" aria-labelledby="inspector-empty-heading" data-openbrush-ui hidden>
+  <header>
+    <h2 id="inspector-empty-heading">Свойства</h2>
+    <ui-button><button id="inspector-empty-close" class="inspector-surface-close" type="button" aria-label="Закрыть свойства слоя" title="Закрыть свойства слоя"><i data-ob-icon="close" aria-hidden="true"></i></button></ui-button>
+  </header>
+  <h3>Выберите элемент</h3>
+  <p>Здесь появятся размеры, оформление<br>и действия с выбранным слоем.</p>
+  <small>Панель можно закрыть — холст станет шире.</small>
+</section>
 <button id="workspace-inspector-advanced-close" data-openbrush-ui type="button" aria-label="Закрыть свойства слоя" title="Закрыть свойства слоя" hidden><i data-ob-icon="close" aria-hidden="true"></i></button>
 <section id="workspace-text-properties" aria-label="Свойства текста" data-openbrush-ui hidden><div class="inspector-fields">
 <h3 data-inspector-part="position">Положение</h3>
@@ -92,14 +102,31 @@
 <label data-inspector-part="tracking">Трекинг<input data-property="tracking" aria-label="Трекинг" type="number" step="any" required></label>
 <div aria-hidden="true" class="inspector-rule" data-inspector-part="fill-rule"></div>
 <h3 data-inspector-part="fill-heading">Заливка</h3>
-<div data-inspector-part="fill-row"><button type="button" class="fill-swatch" aria-label="Открыть палитру заливки" popovertarget="inspector-color-palette"></button><input data-property="fill" aria-label="Цвет заливки" maxlength="9" pattern="#?[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?" required><input data-property="alpha" aria-label="Непрозрачность заливки" type="number" min="0" max="100" step="any" required><span>%</span></div>
+<div data-inspector-part="fill-row">
+  <button type="button" class="fill-swatch" aria-label="Открыть палитру заливки" aria-haspopup="dialog" popovertarget="inspector-color-palette"></button>
+  <input data-property="fill" aria-label="Цвет заливки" maxlength="9" pattern="#?[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?" spellcheck="false" required>
+  <div class="inspector-alpha"><input data-property="alpha" aria-label="Непрозрачность заливки" type="number" min="0" max="100" step="any" required><span aria-hidden="true">%</span></div>
+</div>
 <div aria-hidden="true" class="inspector-rule" data-inspector-part="styles-rule"></div>
 <h3 data-inspector-part="styles">Связанные стили</h3>
-<section id="inspector-color-palette" popover="auto" aria-label="Палитра заливки" data-openbrush-ui>
-  <div class="resource-heading"><h2>Заливка</h2><button type="button" aria-label="Закрыть палитру" popovertarget="inspector-color-palette" popovertargetaction="hide">×</button></div>
-  <div class="palette-sample"></div><div class="palette-swatches" aria-label="Цвета дизайн-системы"><button type="button" data-color-token="ink" aria-label="Основной текст" style="--swatch:var(--ob-ink)"></button><button type="button" data-color-token="muted" aria-label="Вторичный текст" style="--swatch:var(--ob-muted)"></button><button type="button" data-color-token="accent" aria-label="Акцент" style="--swatch:var(--ob-accent)"></button><button type="button" data-color-token="success" aria-label="Успех" style="--swatch:var(--ob-success)"></button><button type="button" data-color-token="danger" aria-label="Ошибка" style="--swatch:var(--ob-danger)"></button><button type="button" data-color-token="paperInk" aria-label="Текст на бумаге" style="--swatch:var(--ob-paperInk)"></button></div>
-  <div class="palette-inputs"><label>HEX<input data-property="fill" aria-label="HEX в палитре" maxlength="9" pattern="#?[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?" required></label>
-  <label>Непрозрачность<input type="number" aria-label="Непрозрачность в палитре" min="0" max="100" step="any" data-property="alpha" required></label></div>
+<section id="inspector-color-palette" popover="auto" role="dialog" aria-label="Палитра заливки" data-openbrush-ui>
+  <header>
+    <h2>Заливка</h2>
+    <ui-button><button class="inspector-surface-close" type="button" aria-label="Закрыть палитру" popovertarget="inspector-color-palette" popovertargetaction="hide"><i data-ob-icon="close" aria-hidden="true"></i></button></ui-button>
+  </header>
+  <div class="palette-sample" aria-hidden="true"></div>
+  <div class="palette-swatches" role="group" aria-label="Цвета дизайн-системы">
+    <button type="button" data-color-token="ink" aria-label="Основной текст" style="--swatch:var(--ob-ink)"></button>
+    <button type="button" data-color-token="muted" aria-label="Вторичный текст" style="--swatch:var(--ob-muted)"></button>
+    <button type="button" data-color-token="accent" aria-label="Акцент" style="--swatch:var(--ob-accent)"></button>
+    <button type="button" data-color-token="success" aria-label="Успех" style="--swatch:var(--ob-success)"></button>
+    <button type="button" data-color-token="danger" aria-label="Ошибка" style="--swatch:var(--ob-danger)"></button>
+    <button type="button" data-color-token="paperInk" aria-label="Текст на бумаге" style="--swatch:var(--ob-paperInk)"></button>
+  </div>
+  <div class="palette-inputs">
+    <label>HEX<input data-property="fill" aria-label="HEX в палитре" maxlength="9" pattern="#?[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?" spellcheck="false" required></label>
+    <label>Непрозрачность<span class="palette-percent"><input type="number" aria-label="Непрозрачность в палитре" min="0" max="100" step="any" data-property="alpha" required><span aria-hidden="true">%</span></span></label>
+  </div>
 </section>
 <span data-inspector-part="binding" id="workspace-style-binding"></span></div></section>
 <ui-button id="workspace-inspector-restore" data-openbrush-ui hidden><button type="button" aria-label="Показать свойства слоя"><span>Свойства скрыты</span><i data-ob-icon="inspector" aria-hidden="true"></i></button></ui-button>
@@ -129,4 +156,4 @@
     <div id="workspace-documents-body"></div>
   </ui-dialog-content>
 </ui-dialog>
-<main id="editor-viewport"><canvas id="op" aria-label="Редактируемый макет" tabindex="0"></canvas></main><ui-drawer id="workspace-sheet" side="right" modal="false" data-openbrush-ui><ui-drawer-backdrop hidden></ui-drawer-backdrop><ui-drawer-content id="workspace-sheet-content" initial-focus="content" hidden data-openbrush-ui><div class="drawer-heading"><ui-drawer-title id="workspace-sheet-title">Панель</ui-drawer-title><ui-drawer-close><button type="button" aria-label="Закрыть панель">×</button></ui-drawer-close></div><ui-drawer-description class="visually-hidden">Библиотека и обратная связь по макету</ui-drawer-description><div id="workspace-drawer"></div></ui-drawer-content></ui-drawer><div id="boot"><strong>OpenBrush</strong><span id="boot-status">Запуск редактора…</span></div><div id="runtime-error" role="alert" hidden></div><div id="operation-status" role="status" aria-live="polite" hidden><span id="status-message"></span><button id="status-dismiss" aria-label="Закрыть уведомление">×</button></div><script>/* NATIVE_SCRIPT */</script></body></html>
+<main id="editor-viewport"><canvas id="op" aria-label="Редактируемый макет" tabindex="0"></canvas></main><ui-drawer id="workspace-sheet" side="right" modal="false" data-openbrush-ui><ui-drawer-backdrop hidden></ui-drawer-backdrop><ui-drawer-content id="workspace-sheet-content" initial-focus="content" hidden data-openbrush-ui><div class="drawer-heading"><ui-drawer-title id="workspace-sheet-title">Панель</ui-drawer-title><ui-drawer-close><button type="button" aria-label="Закрыть панель"><i data-ob-icon="close" aria-hidden="true"></i></button></ui-drawer-close></div><ui-drawer-description class="visually-hidden">Библиотека и обратная связь по макету</ui-drawer-description><div id="workspace-drawer"></div></ui-drawer-content></ui-drawer><div id="boot"><strong>OpenBrush</strong><span id="boot-status">Запуск редактора…</span></div><div id="runtime-error" role="alert" hidden></div><div id="operation-status" role="status" aria-live="polite" hidden><span id="status-message"></span><button id="status-dismiss" aria-label="Закрыть уведомление">×</button></div><script>/* NATIVE_SCRIPT */</script></body></html>

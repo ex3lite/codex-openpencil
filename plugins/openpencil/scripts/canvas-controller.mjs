@@ -69,7 +69,7 @@ export const canvasTools = [
       expectedVersion: { type: 'integer', minimum: 0 } }), required: ['filePath', 'nodeId', 'pageId', 'expectedVersion'] },
     annotations: { destructiveHint: true, openWorldHint: false }, _meta: { ui: { visibility: ['model'] } } },
   { name: 'canvas_autosave', description: 'Persist the synchronized active canvas to its project .op file automatically. Never retries a failed write.',
-    inputSchema: schema({ docJson: { type: 'string' } }), annotations: { destructiveHint: false, openWorldHint: false } },
+    inputSchema: schema({ docJson: { type: 'string' }, retryAccessForDocument: { type: 'string', minLength: 1, description: 'Explicit user recovery after folder access is restored, bound to this document ID.' } }), annotations: { destructiveHint: false, openWorldHint: false } },
   { name: 'canvas_history', description: 'List immutable versions of the active project document, newest first.',
     inputSchema: schema({}), annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: 'canvas_history_status', description: 'Read autosave and version history status for the active document.',
@@ -207,7 +207,9 @@ export class CanvasController {
     if(this.projectSwitchUncertain && !['canvas_panel_state','canvas_status','canvas_selection','canvas_documents','canvas_comments','canvas_agents','canvas_history','canvas_history_status'].includes(name)) throw Error('Переключение макета не подтверждено. Изменения остановлены; откройте сохранённый проект заново.');
     if(name==='canvas_design_system_audit'||name==='canvas_design_system_init'||name==='canvas_prototype_audit') return toolResult(await designSystemOperation(this,name,args));
     if(name==='canvas_autosave') {
-      const result=await this.persistence.flush(args);
+      const result=args.retryAccessForDocument !== undefined
+        ? await this.persistence.retryAccess(args.retryAccessForDocument, args.docJson)
+        : await this.persistence.flush(args);
       this.fonts?.schedule(args.docJson?JSON.parse(args.docJson):undefined);
       return toolResult(result);
     }
@@ -259,7 +261,7 @@ export class CanvasController {
     if (name === 'canvas_codegen_cancel') return toolResult(cancelCodegen(this, args));
     if (name === 'canvas_codegen_poll') return toolResult(pollCodegen(this, args));
     const current = await readCanvasSelection(this.session,{includePath:name==='canvas_panel_state'});
-    const state = { pluginVersion:'0.14.3', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
+    const state = { pluginVersion:'0.14.4', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
       project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,autosave:this.persistence?.status(),agents:this.agentStatus(),comments:this.comments?await this.comments.list():[] };
     return name==='canvas_panel_state' ? {content:[],_meta:{panelState:{...state,layerPath:current.layerPath}}} : toolResult(state);
   }
@@ -330,7 +332,7 @@ export class CanvasController {
       }
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.14.3' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.14.4' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }

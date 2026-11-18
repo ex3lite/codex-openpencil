@@ -1,6 +1,6 @@
 // Groups stay global; selecting an icon materializes only that SVG in a project.
 const nativeIconPacks=(()=>{
-  async function section({drawer,make,button}) {
+  async function section({drawer,make,button,selectedPack}) {
     const section=make('section',null,'library-packs'),heading=make('h3','Пакеты иконок'),groups=make('div',null,'library-grid'),browser=make('div',null,'pack-browser');
     section.append(heading,make('p','Пакеты общие для всех проектов. В макет добавляются только выбранные иконки.'),groups,browser);drawer.append(section);
     const call=(name,args={})=>nativeEditor.call(name,args);
@@ -60,7 +60,10 @@ const nativeIconPacks=(()=>{
         card.append(cover,body,actions);groups.append(card);
       }
     }
-    await load();
+    if (selectedPack) {
+      groups.hidden = true;
+      await browse(selectedPack);
+    } else await load();
   }
   return {section};
 })();

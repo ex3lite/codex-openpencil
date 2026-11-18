@@ -6,11 +6,23 @@ import { join, resolve, relative, isAbsolute } from 'node:path';
 export const stateRoot = () => process.env.OPENPENCIL_CODEX_STATE_DIR || join(homedir(), '.codex-openpencil');
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
+// Custom fork builds may coexist while an older Codex panel is still open.
+export async function pluginRuntimeConfigName() {
+  const {engineSha256} = JSON.parse(await readFile(new URL('../ui/native-engine.js.json', import.meta.url), 'utf8'));
+  if (!/^[a-f0-9]{64}$/.test(engineSha256)) throw Error('Invalid bundled editor fingerprint.');
+  return 'runtime-' + engineSha256 + '.json';
+}
+export async function readRuntimeConfig(state) {
+  try { return JSON.parse(await readFile(join(state, await pluginRuntimeConfigName()), 'utf8')); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  return JSON.parse(await readFile(join(state, 'runtime.json'), 'utf8'));
+}
+
 export async function resolveRuntime(root) {
   if (!root) {
     root = process.env.OPENPENCIL_EDITOR_RUNTIME_DIR;
     if (!root) {
-      try { root = JSON.parse(await readFile(join(stateRoot(), 'runtime.json'), 'utf8')).root; }
+      try { root = (await readRuntimeConfig(stateRoot())).root; }
       catch { /* Report one actionable error for missing or malformed configuration. */ }
     }
   }

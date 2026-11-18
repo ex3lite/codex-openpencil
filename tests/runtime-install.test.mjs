@@ -4,9 +4,9 @@ import { mkdtemp, readFile, readdir, writeFile, rm, mkdir } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync, gunzipSync } from 'node:zlib';
-import { installRuntime, ensureRuntime } from '../plugins/openpencil/scripts/runtime-install.mjs';
+import { installRuntime, ensureRuntime, configureRuntime } from '../plugins/openpencil/scripts/runtime-install.mjs';
 import { packArchive, unpackArchive } from '../plugins/openpencil/scripts/runtime-archive.mjs';
-import { resolveRuntime, sha256 } from '../plugins/openpencil/scripts/editor-runtime.mjs';
+import { resolveRuntime, sha256, pluginRuntimeConfigName } from '../plugins/openpencil/scripts/editor-runtime.mjs';
 
 const platform = `${process.platform}-${process.arch}`;
 async function temporary(t) {
@@ -161,4 +161,18 @@ test('A cached package from the wrong revision is rejected before changing confi
   await assert.rejects(installRuntime(opts), /pinned release/);
   await assert.rejects(ensureRuntime(undefined, opts), /pinned release/);
   assert.equal(opts.count(), 1);
+});
+
+test('a custom plugin runtime leaves older running builds bound to their previous configuration', async t => {
+  const state = await temporary(t);
+  const opts = options(state);
+  const legacy = await ensureRuntime(undefined, opts);
+  const legacyFile = join(state, 'runtime.json');
+  const original = await readFile(legacyFile, 'utf8');
+  await assert.rejects(configureRuntime(legacy.root, state, {}, {forPlugin:true}), /does not match/);
+  assert.equal(await readFile(legacyFile, 'utf8'), original);
+  const broken = join(state, 'absent-custom-build');
+  await writeFile(join(state, await pluginRuntimeConfigName()), JSON.stringify({root:broken}));
+  await assert.rejects(ensureRuntime(undefined, opts), {code:'ENOENT'});
+  assert.equal(await readFile(legacyFile, 'utf8'), original);
 });

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile, rename, rm, lstat } from 'node:fs/
 import { join, resolve, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { resolveRuntime, sha256, stateRoot } from './editor-runtime.mjs';
+import { resolveRuntime, sha256, stateRoot, readRuntimeConfig, pluginRuntimeConfigName } from './editor-runtime.mjs';
 import { extractArchive } from './runtime-archive.mjs';
 import { fetchRuntime } from './runtime-download.mjs';
 
@@ -18,13 +18,20 @@ export function assertSupportedLibc(platform, glibc) {
   }
 }
 
-export async function configureRuntime(root, state = stateRoot(), metadata = {}) {
+export async function configureRuntime(root, state = stateRoot(), metadata = {}, { forPlugin = false } = {}) {
   const runtime = await resolveRuntime(root);
   await mkdir(state, { recursive: true, mode: 0o700 });
+  const configName = forPlugin ? await pluginRuntimeConfigName() : 'runtime.json';
+  if (forPlugin) {
+    const manifest = JSON.parse(await readFile(join(runtime.root, 'openpencil-runtime.json'), 'utf8'));
+    if (configName !== 'runtime-' + manifest.files['bin/web-bundle/op_host_web_bg.wasm'] + '.json') {
+      throw Error('The supplied runtime does not match this plugin build.');
+    }
+  }
   const temporary = join(state, `.runtime-${randomUUID()}.json`);
   try {
     await writeFile(temporary, JSON.stringify({ ...metadata, root: runtime.root }) + '\n', { flag: 'wx', mode: 0o600 });
-    await rename(temporary, join(state, 'runtime.json'));
+    await rename(temporary, join(state, configName));
   } finally { await rm(temporary, { force: true }); }
   return runtime;
 }
@@ -117,7 +124,7 @@ export async function ensureRuntime(root, options = {}) {
   const state = options.state ?? stateRoot();
   let config;
   try {
-    config = JSON.parse(await readFile(join(state, 'runtime.json'), 'utf8'));
+    config = await readRuntimeConfig(state);
   } catch (error) {
     if (error.code !== 'ENOENT') throw new Error(`Invalid runtime configuration: ${error.message}`);
     return installRuntime({ ...options, state });

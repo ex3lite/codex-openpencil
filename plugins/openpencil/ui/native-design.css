@@ -16,6 +16,26 @@
   --ob-tool-gap: 8px;
   --ob-tool-size: 32px;
   --ob-tool-radius: 6px;
+  --ob-layer-tabs-top: 12px;
+  --ob-layer-tabs-side: 12px;
+  --ob-layer-tabs-gap: 4px;
+  --ob-layer-tabs-width: 216px;
+  --ob-layer-tab-width: 88px;
+  --ob-layer-tab-height: 32px;
+  --ob-inspector-content-height: 226px;
+  --ob-inspector-divider-top: 55px;
+  --ob-inspector-title-top: 20px;
+  --ob-inspector-title-left: 16px;
+  --ob-inspector-close-top: 12px;
+  --ob-inspector-close-right: 12px;
+  --ob-inspector-selection-top: 74px;
+  --ob-inspector-selection-meta-top: 102px;
+  --ob-inspector-action-left: 16px;
+  --ob-inspector-attach-top: 134px;
+  --ob-inspector-comment-top: 174px;
+  --ob-inspector-action-height: 32px;
+  --ob-layer-search-top: 210px;
+  --ob-layer-search-right: 4px;
   --ob-picker-width: 792px;
   --ob-picker-height: 736px;
   --ob-picker-padding: 24px;
@@ -43,9 +63,30 @@
   --ob-raised: #25282D;
   --ob-selected: #2B385B;
   --ob-surface: #1C1E22;
+  --ob-success: #8DC8A2;
+  --ob-paperInk: #25392F;
   --ob-motion-control: 120ms;
   --ob-motion-panel: 180ms;
 }
+
+[data-inspector-part="position"] { left:16px; top:20px; width:240px; height:18px; }
+[data-inspector-part="x"] { left:16px; top:46px; width:116px; height:56px; }
+[data-inspector-part="y"] { left:140px; top:46px; width:116px; height:56px; }
+[data-inspector-part="width"] { left:16px; top:110px; width:116px; height:56px; }
+[data-inspector-part="height"] { left:140px; top:110px; width:116px; height:56px; }
+[data-inspector-part="text-rule"] { left:0px; top:184px; width:272px; height:1px; }
+[data-inspector-part="text"] { left:16px; top:204px; width:240px; height:18px; }
+[data-inspector-part="family"] { left:16px; top:234px; width:240px; height:32px; }
+[data-inspector-part="weight"] { left:16px; top:278px; width:116px; height:56px; }
+[data-inspector-part="size"] { left:140px; top:278px; width:116px; height:56px; }
+[data-inspector-part="leading"] { left:16px; top:342px; width:116px; height:56px; }
+[data-inspector-part="tracking"] { left:140px; top:342px; width:116px; height:56px; }
+[data-inspector-part="fill-rule"] { left:0px; top:412px; width:272px; height:1px; }
+[data-inspector-part="fill-heading"] { left:16px; top:432px; width:240px; height:18px; }
+[data-inspector-part="fill-row"] { left:16px; top:462px; width:240px; height:32px; }
+[data-inspector-part="styles-rule"] { left:0px; top:516px; width:272px; height:1px; }
+[data-inspector-part="styles"] { left:16px; top:536px; width:240px; height:18px; }
+[data-inspector-part="binding"] { left:40px; top:569px; width:216px; height:18px; }
 
 [data-ob-icon="brand"] { --ob-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M%209%209%20L%2018%2012%20L%2015%2013%20L%2016%2014%20C%2016.55228%2014.55228%2016.55228%2015.44772%2016%2016%20C%2015.44772%2016.55228%2014.55228%2016.55228%2014%2016%20L%2013%2015%20L%2012%2018%20L%209%209%20Z%20M%204%200%20C%204%202%206%204%208%204%20C%206%204%204%206%204%208%20C%204%206%202%204%200%204%20C%202%204%204%202%204%200%20Z%22%20transform%3D%22translate(2.5%202.5)%20scale(0.8333333333333334)%22%20stroke-width%3D%221.99999992%22%2F%3E%3C%2Fsvg%3E"); }
 [data-ob-icon="library"] { --ob-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M%200%201%20C%200%200.44772%200.44772%200%201%200%20H%205%20C%205.55228%200%206%200.44772%206%201%20V%205%20C%206%205.55228%205.55228%206%205%206%20H%201%20C%200.44772%206%200%205.55228%200%205%20Z%20M%200%2011%20C%200%2010.44772%200.44772%2010%201%2010%20H%205%20C%205.55228%2010%206%2010.44772%206%2011%20V%2015%20C%206%2015.55228%205.55228%2016%205%2016%20H%201%20C%200.44772%2016%200%2015.55228%200%2015%20Z%20M%2010%2011%20C%2010%2010.44772%2010.44772%2010%2011%2010%20H%2015%20C%2015.55228%2010%2016%2010.44772%2016%2011%20V%2015%20C%2016%2015.55228%2015.55228%2016%2015%2016%20H%2011%20C%2010.44772%2016%2010%2015.55228%2010%2015%20Z%20M%2010%201%20C%2010%200.44772%2010.44772%200%2011%200%20H%2015%20C%2015.55228%200%2016%200.44772%2016%201%20V%205%20C%2016%205.55228%2015.55228%206%2015%206%20H%2011%20C%2010.44772%206%2010%205.55228%2010%205%20Z%22%20transform%3D%22translate(2.6666666666666665%202.6666666666666665)%20scale(0.6666666666666666)%22%20stroke-width%3D%222.0000001%22%2F%3E%3C%2Fsvg%3E"); }
@@ -58,6 +99,7 @@
 [data-ob-icon="layers"] { --ob-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M%200%202%20C%200%200.89543%200.89543%200%202%200%20H%2014%20C%2015.10457%200%2016%200.89543%2016%202%20V%2014%20C%2016%2015.10457%2015.10457%2016%2014%2016%20H%202%20C%200.89543%2016%200%2015.10457%200%2014%20Z%20M%205%200%20V%2016%22%20transform%3D%22translate(2.6666666666666665%202.6666666666666665)%20scale(0.6666666666666666)%22%20stroke-width%3D%222.0000001%22%2F%3E%3C%2Fsvg%3E"); }
 [data-ob-icon="inspector"] { --ob-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M%200%202%20C%200%200.89543%200.89543%200%202%200%20H%2014%20C%2015.10457%200%2016%200.89543%2016%202%20V%2014%20C%2016%2015.10457%2015.10457%2016%2014%2016%20H%202%20C%200.89543%2016%200%2015.10457%200%2014%20Z%20M%2011%200%20V%2016%22%20transform%3D%22translate(2.6666666666666665%202.6666666666666665)%20scale(0.6666666666666666)%22%20stroke-width%3D%222.0000001%22%2F%3E%3C%2Fsvg%3E"); }
 [data-ob-icon="close"] { --ob-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M%200%200%20L%2012%2012%20M%2012%200%20L%200%2012%22%20transform%3D%22translate(4%204)%20scale(0.6666666666666666)%22%20stroke-width%3D%222.0000001%22%2F%3E%3C%2Fsvg%3E"); }
+[data-ob-icon="search"] { --ob-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M%200%207%20C%200%2010.86599%203.13401%2014%207%2014%20C%2010.86599%2014%2014%2010.86599%2014%207%20C%2014%203.13401%2010.86599%200%207%200%20C%203.13401%200%200%203.13401%200%207%20Z%20M%2012%2012%20L%2018%2018%22%20transform%3D%22translate(2%202)%20scale(0.6666666666666666)%22%20stroke-width%3D%222.0000001%22%2F%3E%3C%2Fsvg%3E"); }
 [data-ob-icon="plus"] { --ob-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M%200%206%20H%2012%20M%206%200%20V%2012%22%20transform%3D%22translate(4%204)%20scale(0.6666666666666666)%22%20stroke-width%3D%222.0000001%22%2F%3E%3C%2Fsvg%3E"); }
 [data-ob-icon="minus"] { --ob-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M%204%208%20h%208%22%20stroke-width%3D%220.6666667%22%2F%3E%3C%2Fsvg%3E"); }
 [data-ob-icon="more"] { --ob-icon: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2016%2016%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-linejoin%3D%22round%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M%200%201%20C%200%201.55228%200.44772%202%201%202%20C%201.55228%202%202%201.55228%202%201%20C%202%200.44772%201.55228%200%201%200%20C%200.44772%200%200%200.44772%200%201%20Z%20M%206%201%20C%206%201.55228%206.44772%202%207%202%20C%207.55228%202%208%201.55228%208%201%20C%208%200.44772%207.55228%200%207%200%20C%206.44772%200%206%200.44772%206%201%20Z%20M%2012%201%20C%2012%201.55228%2012.44772%202%2013%202%20C%2013.55228%202%2014%201.55228%2014%201%20C%2014%200.44772%2013.55228%200%2013%200%20C%2012.44772%200%2012%200.44772%2012%201%20Z%22%20transform%3D%22translate(3.333333333333333%207.333333333333333)%20scale(0.6666666666666666)%22%20stroke-width%3D%222.0000001%22%2F%3E%3C%2Fsvg%3E"); }

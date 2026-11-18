@@ -35,13 +35,13 @@ export class CanvasComments {
     if(!Array.isArray(nodeIds)||!nodeIds.length||nodeIds.length>100||nodeIds.some(id=>typeof id!=='string')||new Set(nodeIds).size!==nodeIds.length)throw Error('Некорректная цель комментария.');
     const pages=live.document.pages;
     const page=pages?.length?pages.find(page=>page.id===pageId):pageId==='0'?live.document:null;
-    if(!page)throw Error('Страница закреплённого элемента больше не существует.');
+    if(!page)throw Object.assign(Error('Страница закреплённого элемента больше не существует.'),{code:'COMMENT_TARGET_MISSING'});
     const index=new Map(),stack=[{children:page.children||[],parentId:null}];
     while(stack.length){const {children,parentId}=stack.pop();for(const node of children){
       index.set(node.id,{id:node.id,name:node.name||node.type,type:node.type,parentId});
       if(node.children?.length)stack.push({children:node.children,parentId:node.id});
     }}
-    if(nodeIds.some(id=>!index.has(id)))throw Error('Закреплённый слой больше не существует.');
+    if(nodeIds.some(id=>!index.has(id)))throw Object.assign(Error('Закреплённый слой больше не существует.'),{code:'COMMENT_TARGET_MISSING'});
     if (live.version !== expectedVersion || !snapshotMatches(JSON.parse(docJson), live)) throw Error('Макет изменился. Обновите цель комментария перед отправкой.');
     const comment = { id: requestId, ...this.identity, version: live.version, pageId, nodeIds: [...nodeIds],
       nodes: nodeIds.map(id=>index.get(id)), text: text.trim(), status: 'draft', createdAt: new Date().toISOString() };

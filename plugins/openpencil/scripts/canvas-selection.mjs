@@ -42,7 +42,7 @@ export function sameSelection(a, b) {
     a.nodeIds.length === b.nodeIds.length && [...a.nodeIds].sort().every((id, index) => id === right[index]);
 }
 
-export async function readCanvasSelection(session, { fresh = false } = {}) {
+export async function readCanvasSelection(session, { fresh = false, includePath = false } = {}) {
   const state = async () => editorState(await session.forward({ jsonrpc: '2.0', id: 'canvas-selection',
     method: 'tools/call', params: { name: 'get_editor_state', arguments: {} } }));
   const before = await state();
@@ -61,5 +61,16 @@ export async function readCanvasSelection(session, { fresh = false } = {}) {
   if (!page || (document.pages?.length && page.id !== after.pageId)) throw selectionError('Страница синхронизируется. Повторите позже.', 'SELECTION_TRANSITION');
   const nodes = after.nodeIds.length ? selectionIndex(document, page, live.version) : new Map();
   if (after.nodeIds.some(id => !nodes.has(id))) throw selectionError('Выбранных элементов больше нет. Выделите их снова.', 'SELECTION_STALE');
-  return { live, selection: { ...after, count: after.nodeIds.length, nodes: after.nodeIds.map(id => nodes.get(id)) } };
+  const selection = { ...after, count: after.nodeIds.length, nodes: after.nodeIds.map(id => nodes.get(id)) };
+  if (includePath && selection.count === 1) {
+    const path = [], seen = new Set();
+    let ancestor = nodes.get(selection.nodes[0].parentId);
+    while (ancestor && !seen.has(ancestor.id)) {
+      seen.add(ancestor.id);
+      path.push(ancestor.name);
+      ancestor = nodes.get(ancestor.parentId);
+    }
+    return {live,selection,layerPath:path.reverse()};
+  }
+  return {live,selection};
 }

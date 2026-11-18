@@ -6,7 +6,7 @@
   <div class="workspace-identity">
     <i data-ob-icon="brand" aria-hidden="true"></i><strong>OpenBrush</strong>
     <span id="workspace-project">Проект</span>
-    <span id="workspace-save-state" role="status" aria-live="polite" hidden></span>
+    <button id="workspace-save-state" type="button" aria-live="polite" hidden></button>
   </div>
   <span id="workspace-document-title"></span>
   <ui-toolbar aria-label="Редактор">
@@ -23,6 +23,9 @@
       <button id="workspace-expand" type="button">Развернуть редактор</button>
       <button id="workspace-sidebar" type="button" aria-pressed="true">Скрыть слои</button>
       <button id="workspace-inspector" type="button" aria-pressed="true">Скрыть свойства</button>
+      <button id="workspace-slides" type="button">Слайды</button>
+      <button id="workspace-property-mode" type="button" hidden>Все свойства текста</button>
+      <button id="workspace-code-view" type="button">Код</button>
       <button id="workspace-fit" type="button">Уместить макет</button>
       <button id="workspace-attach" type="button" disabled>В контекст</button>
       <button id="workspace-comment" type="button" disabled>Комментировать</button>
@@ -51,7 +54,54 @@
   </ui-popover>
   <strong id="workspace-preview-caption" hidden>Проверка прототипа</strong>
 </header>
-<button id="workspace-inspector-close" data-openbrush-ui type="button" aria-label="Закрыть свойства слоя" title="Закрыть свойства слоя" hidden><i data-ob-icon="close" aria-hidden="true"></i></button>
+<div id="workspace-layer-tabs" data-openbrush-ui hidden>
+  <ui-toolbar aria-label="Панель слоёв">
+    <ui-toolbar-button><button id="workspace-layer-view" type="button" aria-pressed="true">Слои</button></ui-toolbar-button>
+    <ui-toolbar-button><button id="workspace-layer-resources" type="button" aria-expanded="false" aria-controls="workspace-sheet-content">Ресурсы</button></ui-toolbar-button>
+    <ui-toolbar-button><button id="workspace-layer-collapse" type="button" aria-label="Скрыть панель слоёв" title="Скрыть панель слоёв"><i data-ob-icon="layers" aria-hidden="true"></i></button></ui-toolbar-button>
+  </ui-toolbar>
+</div>
+<ui-popover id="workspace-layer-search" data-openbrush-ui hidden>
+  <ui-popover-trigger><button type="button" aria-label="Поиск по слоям" title="Поиск по слоям"><i data-ob-icon="search" aria-hidden="true"></i></button></ui-popover-trigger>
+  <ui-popover-content id="workspace-layer-search-content" side="bottom" align="end" initial-focus="#workspace-layer-query" hidden>
+    <ui-popover-title class="visually-hidden">Поиск по слоям</ui-popover-title>
+    <input id="workspace-layer-query" type="search" maxlength="100" placeholder="Найти слой" aria-label="Найти слой">
+  </ui-popover-content>
+</ui-popover>
+<section id="workspace-inspector-header" data-openbrush-ui aria-label="Свойства выделения" hidden>
+  <h2>Свойства</h2>
+  <button id="workspace-inspector-close" type="button" aria-label="Закрыть свойства слоя" title="Закрыть свойства слоя"><i data-ob-icon="close" aria-hidden="true"></i></button>
+  <div class="inspector-layer-title"><i id="workspace-inspector-layer-icon" data-ob-icon="layers" aria-hidden="true"></i><strong id="workspace-inspector-layer"></strong></div>
+  <div id="workspace-inspector-layer-meta"></div>
+  <ui-button><button class="primary inspector-action" id="workspace-inspector-attach" type="button" disabled><i data-ob-icon="context" aria-hidden="true"></i><span>В контекст чата</span></button></ui-button>
+  <ui-button><button class="inspector-action" id="workspace-inspector-comment" type="button" disabled><i data-ob-icon="comment" aria-hidden="true"></i><span>Комментировать</span></button></ui-button>
+</section>
+<button id="workspace-inspector-advanced-close" data-openbrush-ui type="button" aria-label="Закрыть свойства слоя" title="Закрыть свойства слоя" hidden><i data-ob-icon="close" aria-hidden="true"></i></button>
+<section id="workspace-text-properties" aria-label="Свойства текста" data-openbrush-ui hidden><div class="inspector-fields">
+<h3 data-inspector-part="position">Положение</h3>
+<label data-inspector-part="x">X<input data-property="x" aria-label="X" type="number" step="any" required></label>
+<label data-inspector-part="y">Y<input data-property="y" aria-label="Y" type="number" step="any" required></label>
+<label data-inspector-part="width">Ширина<input data-property="width" aria-label="Ширина" type="number" step="any" min="0" required></label>
+<label data-inspector-part="height">Высота<input data-property="height" aria-label="Высота" type="number" step="any" min="0" required></label>
+<div aria-hidden="true" class="inspector-rule" data-inspector-part="text-rule"></div>
+<h3 data-inspector-part="text">Текст</h3>
+<input data-inspector-part="family" type="text" maxlength="128" data-property="family" aria-label="Семейство шрифта" required>
+<label data-inspector-part="weight">Начертание<input data-property="weight" aria-label="Начертание" type="number" min="1" max="1000" step="1" required></label>
+<label data-inspector-part="size">Размер<input data-property="size" aria-label="Размер" type="number" min="0.1" step="any" required></label>
+<label data-inspector-part="leading">Межстрочный<input data-property="leading" aria-label="Межстрочный" type="number" min="1" step="any" required></label>
+<label data-inspector-part="tracking">Трекинг<input data-property="tracking" aria-label="Трекинг" type="number" step="any" required></label>
+<div aria-hidden="true" class="inspector-rule" data-inspector-part="fill-rule"></div>
+<h3 data-inspector-part="fill-heading">Заливка</h3>
+<div data-inspector-part="fill-row"><button type="button" class="fill-swatch" aria-label="Открыть палитру заливки" popovertarget="inspector-color-palette"></button><input data-property="fill" aria-label="Цвет заливки" maxlength="9" pattern="#?[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?" required><input data-property="alpha" aria-label="Непрозрачность заливки" type="number" min="0" max="100" step="any" required><span>%</span></div>
+<div aria-hidden="true" class="inspector-rule" data-inspector-part="styles-rule"></div>
+<h3 data-inspector-part="styles">Связанные стили</h3>
+<section id="inspector-color-palette" popover="auto" aria-label="Палитра заливки" data-openbrush-ui>
+  <div class="resource-heading"><h2>Заливка</h2><button type="button" aria-label="Закрыть палитру" popovertarget="inspector-color-palette" popovertargetaction="hide">×</button></div>
+  <div class="palette-sample"></div><div class="palette-swatches" aria-label="Цвета дизайн-системы"><button type="button" data-color-token="ink" aria-label="Основной текст" style="--swatch:var(--ob-ink)"></button><button type="button" data-color-token="muted" aria-label="Вторичный текст" style="--swatch:var(--ob-muted)"></button><button type="button" data-color-token="accent" aria-label="Акцент" style="--swatch:var(--ob-accent)"></button><button type="button" data-color-token="success" aria-label="Успех" style="--swatch:var(--ob-success)"></button><button type="button" data-color-token="danger" aria-label="Ошибка" style="--swatch:var(--ob-danger)"></button><button type="button" data-color-token="paperInk" aria-label="Текст на бумаге" style="--swatch:var(--ob-paperInk)"></button></div>
+  <div class="palette-inputs"><label>HEX<input data-property="fill" aria-label="HEX в палитре" maxlength="9" pattern="#?[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?" required></label>
+  <label>Непрозрачность<input type="number" aria-label="Непрозрачность в палитре" min="0" max="100" step="any" data-property="alpha" required></label></div>
+</section>
+<span data-inspector-part="binding" id="workspace-style-binding"></span></div></section>
 <ui-button id="workspace-inspector-restore" data-openbrush-ui hidden><button type="button" aria-label="Показать свойства слоя"><span>Свойства скрыты</span><i data-ob-icon="inspector" aria-hidden="true"></i></button></ui-button>
 <ui-toolbar id="workspace-dock" aria-label="Инструменты холста" data-openbrush-ui>
   <div class="dock-tools">

@@ -1,6 +1,6 @@
 // Remote catalog queries stay in MCP; browsing does not attach data to chat.
 const nativeCommunityCatalog=(()=>{
-  async function section({drawer,make,button,onAcquire}) {
+  async function section({drawer,make,button,onAcquire,onLocal}) {
     const section=make('section',null,'community-catalog'),heading=make('h3','Figma Community'),form=make('div',null,'library-search'),input=document.createElement('input');
     input.type='search';input.placeholder='UI Kit, Apple landing page, icons…';input.setAttribute('aria-label','Поиск в Figma Community');
     const state=make('p','Поиск по настоящему каталогу Figma. Найденное можно сохранить в общую библиотеку.'),results=make('div',null,'library-grid');let serial=0;
@@ -9,7 +9,8 @@ const nativeCommunityCatalog=(()=>{
       try {
         const response=await nativeEditor.call('canvas_community_catalog_search',{query:input.value.trim(),limit:8});
         if(current!==serial)return;
-        state.textContent=response.results.length?'Найдено ресурсов: '+response.results.length:'По этому запросу ресурсов не найдено.';
+        state.textContent=response.results.length?'Найдено ресурсов: '+response.results.length:'Ничего не найдено';
+        if(!response.results.length) results.append(make('p','Попробуйте название набора, имя автора или более короткий запрос.'));
         const previews=[];
         for(const resource of response.results){
           const card=make('article',null,'library-card'),cover=make('div',null,'library-cover'),body=make('div',null,'library-card-body'),actions=make('div',null,'library-card-actions');
@@ -29,7 +30,14 @@ const nativeCommunityCatalog=(()=>{
           try {const preview=await nativeEditor.call('canvas_community_catalog_cover',{resourceId:resource.resourceId});if(current!==serial)return;const image=document.createElement('img');image.src=preview.coverDataUrl;image.alt='Обложка '+resource.title;image.className='library-cover-image';cover.replaceChildren(image);}
           catch {cover.replaceChildren(make('span','Оригинальная обложка недоступна','library-cover-empty'));}
         }
-      }catch(error){if(current===serial)state.textContent=error.message;}
+      }catch(error){
+        if(current!==serial)return;
+        state.textContent='Каталог пока недоступен';
+        results.replaceChildren(make('p','Скачанные ресурсы доступны локально.'));
+        const reason=make('details');reason.append(make('summary','Подробности'),make('p',error.message));results.append(reason);
+        if(onLocal) results.append(button('Локальная библиотека',onLocal));
+        results.append(button('Повторить поиск',search));
+      }
     }
     form.append(input,button('Искать в Community',search));input.onkeydown=event=>{if(event.key==='Enter')void search();};
     section.append(heading,form,state,results);drawer.append(section);

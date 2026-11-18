@@ -13,7 +13,11 @@ const nativeFonts = (()=>{
       for(const family of data.families || []) {
         const row=make('p');row.append(make('strong',family.family),make('span',family.status==='ready'?' · готов':' · доступен частично'));
         if(family.missingFaces?.length)row.append(make('small',' Не найдены: '+family.missingFaces.map(f=>`${f.weight} ${f.style==='italic'?'курсив':''}`).join(', ')));
-        rows.append(row);
+        if(family.nearestFaces?.length){
+          const fallback=make('details');fallback.append(make('summary','Показать замену'));
+          for(const face of family.nearestFaces)fallback.append(make('p',family.family+' · '+face.requestedWeight+' → '+face.availableWeight+(face.style==='italic'?' · курсив':'')));
+          rows.append(row,fallback);
+        }else rows.append(row);
       }
     }
     details.append(button('Проверить шрифты макета',async()=>{state.textContent='Определяем нужные шрифты…';render(await nativeEditor.call('canvas_fonts_prepare'));}),

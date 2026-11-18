@@ -1,6 +1,7 @@
-import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { readFile, mkdir } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
+import { durableWrite } from './atomic-files.mjs';
+import { withLibraryLock } from './library-storage.mjs';
 import { sameSelection } from './canvas-selection.mjs';
 import { snapshotMatches } from './document-format.mjs';
 
@@ -16,19 +17,25 @@ export class CanvasComments {
       return data;
     } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
   }
-  async persist(comments) {
-    await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
-    const temp = this.filePath + '.' + randomUUID() + '.tmp';
-    await writeFile(temp, JSON.stringify(comments, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
-    await rename(temp, this.filePath);
+  async withJournalLock(action) {
+    const directory = dirname(this.filePath);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    return withLibraryLock(directory, action, basename(this.filePath) + '.lock');
   }
-  async create({ requestId, text, pageId, nodeIds, expectedVersion, docJson }) {
+  persist(comments) {
+    return durableWrite(this.filePath, JSON.stringify(comments, null, 2) + '\n');
+  }
+  create(args) {
+    return this.withJournalLock(() => this.createLocked(args));
+  }
+  async createLocked({ requestId, text, pageId, nodeIds, expectedVersion, docJson, prepareDelivery = false }) {
     if (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{8,100}$/.test(requestId)) throw Error('Invalid comment request ID');
     if (typeof text !== 'string' || !text.trim() || text.length > 8000) throw Error('Напишите комментарий длиной до 8000 символов.');
     const comments = await this.list(), existing = comments.find(c => c.id === requestId);
     if (existing) {
       if (existing.text !== text.trim() || !sameSelection(existing, { pageId, nodeIds })) throw Error('Этот ID уже принадлежит другому комментарию.');
-      return existing;
+      // An existing request may already have reached its chat, even after a crash.
+      return prepareDelivery ? {...existing, shouldSend:false} : existing;
     }
     if (comments.length >= 500) throw Error('В документе уже 500 комментариев.');
     const live=await this.session.document();
@@ -44,10 +51,15 @@ export class CanvasComments {
     if(nodeIds.some(id=>!index.has(id)))throw Object.assign(Error('Закреплённый слой больше не существует.'),{code:'COMMENT_TARGET_MISSING'});
     if (live.version !== expectedVersion || !snapshotMatches(JSON.parse(docJson), live)) throw Error('Макет изменился. Обновите цель комментария перед отправкой.');
     const comment = { id: requestId, ...this.identity, version: live.version, pageId, nodeIds: [...nodeIds],
-      nodes: nodeIds.map(id=>index.get(id)), text: text.trim(), status: 'draft', createdAt: new Date().toISOString() };
-    comments.push(comment); await this.persist(comments); return comment;
+      nodes: nodeIds.map(id=>index.get(id)), text: text.trim(), status: prepareDelivery ? 'uncertain' : 'draft', createdAt: new Date().toISOString() };
+    comments.push(comment);
+    await this.persist(comments);
+    return prepareDelivery ? {...comment,shouldSend:true} : comment;
   }
-  async update({ commentId, status }) {
+  update(args) {
+    return this.withJournalLock(() => this.updateLocked(args));
+  }
+  async updateLocked({ commentId, status }) {
     if (!['sent', 'uncertain', 'resolved'].includes(status)) throw Error('Invalid comment status');
     const comments = await this.list(), comment = comments.find(c => c.id === commentId);
     if (!comment) throw Error('Комментарий не найден в этом документе.');

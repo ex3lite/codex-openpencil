@@ -10,8 +10,13 @@ const nativeContextState = (() => {
       identity = next; current = value; available = true;
       return switched;
     }
+    function selectionKey() {
+      const selection = current?.selection;
+      return selection?.count && JSON.stringify([current.documentId, selection.pageId, [...selection.nodeIds].sort()]);
+    }
     return {
       observe,
+      get selectionAttached() { return attachments.some(item => item.id === selectionKey()); },
       unavailable() { available = false; },
       reset() { attachments = []; current = null; identity = undefined; available = false; },
       add() {
@@ -19,12 +24,13 @@ const nativeContextState = (() => {
         const selection = current.selection;
         if (selection.count > 100) throw Error('Добавьте не больше 100 слоёв за один раз.');
         const nodeIds = [...selection.nodeIds];
-        const key = JSON.stringify([current.documentId, selection.pageId, [...nodeIds].sort()]);
-        if (attachments.some(item => item.id === key)) return;
+        const key = selectionKey();
+        if (attachments.some(item => item.id === key)) return key;
         if (attachments.length >= 20) throw Error('Можно закрепить до 20 выделений. Удалите ненужное вложение.');
         attachments.push({ id:key, pageId:selection.pageId, nodeIds,
           nodes:(selection.nodes || []).map(node => ({id:node.id, name:node.name, type:node.type})),
           capturedVersion:current.version });
+        return key;
       },
       remove(id) { attachments = attachments.filter(item => item.id !== id); },
       clear() { attachments = []; },

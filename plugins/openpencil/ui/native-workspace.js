@@ -4,6 +4,8 @@ const nativeWorkspace = (() => {
   let state, mode, target, sending = false, displayedMode, commentDraft = null, commentsKey;
   let contextChanged = () => {}, retryContext = () => {}, delivery = {state:'pending'}, contextNotice = '';
   const context = nativeContextState.create();
+  const pinnedDrafts = new Map();
+  let activeAttachment;
   const drawer = $('workspace-drawer');
   const documentsDialog = $('workspace-documents-dialog');
   const more = $('workspace-more');
@@ -46,8 +48,15 @@ const nativeWorkspace = (() => {
   async function addContext() {
     const current = await nativeEditor.captureSelection();
     if (context.observe(current)) contextNotice = 'Открыт другой макет. Вложения предыдущего макета удалены.';
+    if (state?.documentId !== current.documentId || state?.canvasId !== current.canvasId) pinnedDrafts.clear();
     state = current;
-    contextEdit(() => context.add());
+    contextEdit(() => {
+      activeAttachment = context.add();
+      if (!pinnedDrafts.has(activeAttachment)) pinnedDrafts.set(activeAttachment,{
+        requestId:crypto.randomUUID(), documentId:current.documentId, canvasId:current.canvasId,
+        path:current.layerPath?.join(' / ') || '', text:''
+      });
+    });
   }
   function updateContextDelivery() {
     const output = $('context-delivery'); if (!output) return;
@@ -59,31 +68,66 @@ const nativeWorkspace = (() => {
   }
   function refreshContextSelection() {
     const selection = $('context-selection'), add = $('context-add');
+    const footer = $('context-selection-tools');
+    if (footer) footer.hidden = context.available && context.selectionAttached;
     if (selection) selection.textContent = context.available ? describe(state?.selection) : 'Холст временно недоступен. Вложения сохранены в панели.';
     if (add) add.disabled = !context.available || !state?.selection?.count || !nativeBridge.capabilities.updateModelContext;
   }
   function renderContext() {
-    show('context', context.attachments.length ? 'Контекст чата · '+context.attachments.length : 'Контекст чата');
-    if(!context.attachments.length) drawer.append(make('h2','Здесь пока ничего нет'), make('p','Выберите слой на холсте и нажмите «В контекст».'));
+    const attachments = context.attachments;
+    const active = attachments.find(item => item.id === activeAttachment) || attachments.at(-1);
+    activeAttachment = active?.id;
+    show('context', 'Контекст чата');
     const selection = make('p'); selection.id = 'context-selection';
     const add = button('Добавить в контекст', addContext, 'primary'); add.id = 'context-add';
-    drawer.append(selection, add);
-
-    for (const attachment of context.attachments) {
-      const item = make('article', null, 'item context-attachment');
-      item.append(make('strong', attachment.nodes.map(node => node.name || node.type || node.id).join(', ') || attachment.nodeIds.join(', ')),
-        make('small', `${attachment.nodeIds.length} слоёв · закреплено на версии ${attachment.capturedVersion}`),
-        button('Удалить из контекста', () => contextEdit(() => context.remove(attachment.id))));
-      drawer.append(item);
+    const flow=make('div',null,'context-panel-flow');
+    drawer.append(flow);
+    if (!active) flow.append(make('h2','Здесь пока ничего нет'), make('p','Выберите слой на холсте и нажмите «В контекст».'));
+    else {
+      flow.append(make('p','Только то, что вы прикрепили','context-subtitle'),
+        make('h3',`Прикреплено · ${attachments.length}`,'context-count'));
+      for (const attachment of attachments) {
+        const name = attachment.nodes.map(node => node.name || node.type || node.id).join(', ');
+        const draft = pinnedDrafts.get(attachment.id);
+        const item = make('article', null, 'item context-attachment');
+        const select = button(name, () => {activeAttachment = attachment.id;renderContext();});
+        const trigger = select.querySelector('button') || select;
+        trigger.setAttribute('aria-pressed',String(attachment.id === active.id));
+        const remove = button('Удалить из контекста', () => contextEdit(() => {
+          pinnedDrafts.delete(attachment.id);context.remove(attachment.id);
+        }), 'context-remove');
+        item.append(select,remove,make('small',draft?.path || `Слоёв: ${attachment.nodeIds.length} · версия ${attachment.capturedVersion}`));
+        flow.append(item);
+      }
+      flow.append(make('p','Закреплено. Следующее выделение не изменит эту цель.','context-target-note'));
+      const draft = pinnedDrafts.get(active.id);
+      if(draft && nativeBridge.capabilities.message?.text) {
+        const label = make('label','Комментарий к слою «'+active.nodes.map(node=>node.name).join(', ')+'»');
+        label.htmlFor='pinned-comment-text';
+        const text=make('textarea');text.id=label.htmlFor;text.maxLength=8000;text.value=draft.text;
+        text.placeholder='Что изменить?';text.readOnly=sending;
+        const send=button('Отправить в Codex',()=>submitComment(draft.text,send,{
+          ...draft,selection:{pageId:active.pageId,nodeIds:active.nodeIds},attachmentId:active.id
+        }),'primary');
+        send.disabled=sending || !draft.text.trim();
+        text.oninput=()=>{draft.text=text.value;send.disabled=sending || !draft.text.trim();};
+        const editor=make('div',null,'pinned-comment');
+        editor.append(label,text,send);flow.append(editor);
+      }
     }
-    if (context.attachments.length) drawer.append(button('Удалить все вложения', () => contextEdit(() => context.clear())));
-    if (contextNotice) drawer.append(make('p', contextNotice));
+    const footer = make('div',null,'context-selection-tools');
+    footer.id = 'context-selection-tools';
+    footer.append(selection,add);flow.append(footer);
+    if (attachments.length>1) flow.append(button('Удалить все вложения', () => contextEdit(() => {
+      pinnedDrafts.clear();context.clear();
+    })));
+    if (contextNotice) flow.append(make('p', contextNotice));
     const deliveryText = make('p', null, 'delivery'); deliveryText.id = 'context-delivery'; deliveryText.setAttribute('role','status');
     const retry = button('Повторить передачу', () => retryContext()); retry.id = 'context-retry';
-    drawer.append(deliveryText, retry);
+    flow.append(deliveryText, retry);
     const details = make('details'), summary = make('summary', 'Что именно получает Codex');
     const data = make('pre', JSON.stringify(contextData(), null, 2)); data.id = 'context-details';
-    details.append(summary, data); drawer.append(details);
+    details.append(summary, data); flow.append(details);
 
     refreshContextSelection(); updateContextDelivery();
   }
@@ -116,34 +160,48 @@ const nativeWorkspace = (() => {
     drawer.append(label, text, make('p', 'Комментарий сохранится в проекте вместе с точной целью. Следующее выделение его не изменит.'));
     const actions = make('div', null, 'actions'); actions.append(button('Выбрать другую цель', () => retargetComment(text.value)), send); drawer.append(actions); text.focus();
   }
-  async function submitComment(text, control) {
-    if (sending || !text.trim()) return;
-    sending = true; control.disabled = true;
+  async function submitComment(text, control, captured = target) {
+    if (sending || !captured || !text.trim()) return;
+    const sourceMode=mode;
+    const ownsView=()=>mode===sourceMode && state?.documentId===captured.documentId &&
+      (captured.attachmentId ? activeAttachment===captured.attachmentId : target?.requestId===captured.requestId);
+    sending=true;control.disabled=true;
     try {
       const snapshot=await nativeEditor.flush();
       const current=await nativeEditor.call('canvas_panel_state');
-      if(current.documentId!==target.documentId)throw Error('Открыт другой макет. Выберите цель заново.');
-      const comment = await nativeEditor.call('canvas_comment_create', { requestId: target.requestId, text,
-        pageId:target.selection.pageId, nodeIds:target.selection.nodeIds, expectedVersion:current.version, docJson:snapshot.docJson });
-      // One explicit user action produces one message. An uncertain send is not replayed.
-      try {
-        const result = await nativeBridge.request('ui/message', { role: 'user', content: [{ type:'text', text:
-          `Комментарий OpenBrush ${comment.id}\n${JSON.stringify(comment)}\nПрочитай canvas_comments. Измени только закреплённые слои; при изменившейся версии проверь их перед правкой. После проверки отметь комментарий выполненным.` }] });
-        if (result?.isError) throw Error('Codex не принял сообщение');
-        await nativeEditor.call('canvas_comment_update', { commentId: comment.id, status:'sent' });
-        nativeEditor.status('Комментарий передан в этот чат.');
-      } catch (error) {
-        await nativeEditor.call('canvas_comment_update', { commentId: comment.id, status:'uncertain' });
-        nativeEditor.status(`Комментарий сохранён. Отправка не подтверждена: ${error.message}`, true);
+      if(current.documentId!==captured.documentId || current.canvasId!==captured.canvasId) throw Error('Открыт другой макет. Выберите цель заново.');
+      const {shouldSend,...comment}=await nativeEditor.call('canvas_comment_create',{requestId:captured.requestId,text,prepareDelivery:true,
+        pageId:captured.selection.pageId,nodeIds:captured.selection.nodeIds,expectedVersion:current.version,docJson:snapshot.docJson});
+      if(shouldSend){
+        let status='sent';
+        try {
+          const result=await nativeBridge.request('ui/message',{role:'user',content:[{type:'text',text:
+            `Комментарий OpenBrush ${comment.id}\n${JSON.stringify(comment)}\nПрочитай canvas_comments. Измени только закреплённые слои; при изменившейся версии проверь их перед правкой. После проверки отметь комментарий выполненным.`}]});
+          if(result?.isError)throw Error('Codex не принял сообщение');
+        } catch {status='uncertain';}
+        await nativeEditor.call('canvas_comment_update',{commentId:comment.id,status});
       }
-      commentDraft=null; target=null; mode=null; await renderComments();
+      // A repeated intent is already journaled, including when the host receipt was lost.
+      if(captured.attachmentId) {
+        const draft=pinnedDrafts.get(captured.attachmentId);
+        if(draft?.requestId===captured.requestId){draft.requestId=crypto.randomUUID();if(draft.text===text)draft.text='';}
+      } else if(target?.requestId===captured.requestId) {commentDraft=null;}
+      if(ownsView()){
+        if(!captured.attachmentId){commentDraft=null;target=null;}
+        mode=null;
+        await renderComments();
+      }
     } catch(error) {
-      if(error.code!=='COMMENT_TARGET_MISSING') throw error;
+      if(error.code!=='COMMENT_TARGET_MISSING' || !ownsView())throw error;
+      target=captured;
       show('missing-target','Слой больше недоступен');
       drawer.append(make('p','Цель комментария удалена из макета.'),make('blockquote',text),
         button('Выбрать другую цель',()=>retargetComment(text),'primary'),button('Закрыть',close));
       commentDraft={target,text};
-    } finally { sending = false; control.disabled = false; }
+    } finally {
+      sending=false;control.disabled=false;
+      if(mode==='context')renderContext();
+    }
   }
   async function renderComments() { paintComments(await nativeEditor.call('canvas_comments')); }
   function paintComments(comments) {
@@ -303,7 +361,7 @@ const nativeWorkspace = (() => {
     if (event.type === 'op-shell/display-mode') void expand().catch(e => nativeEditor.status(e.message,true));
     if (event.type === 'op-shell/document-replaced') {
       if (layerQuery.value) { layerQuery.value = ''; layerQuery.oninput(); }
-      target = null; commentDraft=null; context.reset(); contextChanged();
+      target = null; commentDraft=null; pinnedDrafts.clear();activeAttachment=null;context.reset(); contextChanged();
       $('workspace-context-label').textContent = 'Контекст · 0'; close(); documentsDialog.open = false;
     }
   });
@@ -320,7 +378,7 @@ const nativeWorkspace = (() => {
     update(current) {
       state = current;
       const switched = context.observe(current);
-      if (switched) {commentDraft=null; target=null; contextChanged(); if(layerQuery.value){layerQuery.value=''; layerQuery.oninput();}}
+      if (switched) {pinnedDrafts.clear();activeAttachment=null;commentDraft=null; target=null; contextChanged(); if(layerQuery.value){layerQuery.value=''; layerQuery.oninput();}}
       if (switched) contextNotice = 'Открыт другой макет. Вложения предыдущего макета удалены.';
       const saving=current.autosave;
       const failed=['error','snapshot-rejected'].includes(saving?.state);

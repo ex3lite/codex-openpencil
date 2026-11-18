@@ -9,7 +9,7 @@ export const workspaceTools = [
     {documentId:string,create:{type:'boolean'},docJson:string},[],true),
   tool('canvas_document_import','Import an external .op as a new copy inside this project. The original is preserved and no existing file is replaced.',{sourcePath:string,filePath:string},['sourcePath']),
   tool('canvas_comment_create','Persist feedback on exact selected layers after UI flush. Captures project, document, page, nodes and version; does not send a chat message.',
-    {requestId:string,text:{type:'string',maxLength:8000},pageId:string,nodeIds:ids,expectedVersion:{type:'integer'},docJson:string},['requestId','text','pageId','nodeIds','expectedVersion','docJson'],true),
+    {requestId:string,prepareDelivery:{type:'boolean'},text:{type:'string',maxLength:8000},pageId:string,nodeIds:ids,expectedVersion:{type:'integer'},docJson:string},['requestId','text','pageId','nodeIds','expectedVersion','docJson'],true),
   tool('canvas_comments','Read durable comments for this project document. Use fixed node IDs and captured version, never the later selection. A missing layer is not permission to edit the whole canvas.',{},[],false,true),
   tool('canvas_comment_update','Update delivery or resolution of a saved comment. Mark resolved only after implementing and verifying its requested change.',
     {commentId:string,status:{type:'string',enum:['sent','uncertain','resolved']}},['commentId','status']),

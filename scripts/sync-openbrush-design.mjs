@@ -37,6 +37,7 @@ const px = number => {
   return `${number}px`;
 };
 const dimensions = {
+  'context-card-height': layer('ob-r-385').height, 'context-input-height': layer('ob-r-394').height,
   inset: header.x, 'header-height': header.height, 'header-gap': header.gap,
   'panel-radius': picker.cornerRadius, 'panel-top': library.y, 'layers-width': layer('ob-r-122').width,
   'inspector-width': layer('ob-r-124').width, 'dock-width': dock.width, 'dock-height': dock.height,

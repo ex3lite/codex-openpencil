@@ -1,5 +1,7 @@
 /* Generated from OpenBrush-Interface.op by scripts/sync-openbrush-design.mjs. */
 :root {
+  --ob-context-card-height: 88px;
+  --ob-context-input-height: 124px;
   --ob-inset: 16px;
   --ob-header-height: 56px;
   --ob-header-gap: 16px;

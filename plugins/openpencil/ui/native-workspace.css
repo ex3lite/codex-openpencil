@@ -589,3 +589,29 @@ html[data-preview=true] #workspace-text-properties { display: none; }
 #workspace-drawer .library-preferences .toggle input { margin:0; }
 .library-tools { margin-top:24px; }
 #workspace-bar #workspace-save-state { min-width:0; padding:0 4px; background:transparent; font-size:11px; }
+#workspace-sheet-content[data-panel=context] #workspace-drawer { padding-top:0; }
+#workspace-sheet-content[data-panel=context] .drawer-heading { border-bottom:0; }
+#workspace-drawer .context-subtitle { margin:0 -16px; padding:0 16px 16px; border-bottom:1px solid var(--ob-border); font-size:12px; }
+#workspace-drawer .context-count { margin:16px 0; }
+#workspace-drawer .context-attachment { position:relative; box-sizing:border-box; min-height:var(--ob-context-card-height); margin:0 0 8px; padding:10px 12px; }
+.context-attachment button[aria-pressed] { display:block; max-width:calc(100% - 30px); padding:4px 0; border:0; background:transparent; text-align:left; overflow-wrap:anywhere; }
+.context-attachment:has(button[aria-pressed=true]) { outline:1px solid var(--ob-accent); outline-offset:-1px; }
+.context-attachment button.context-remove { position:absolute; right:4px; top:4px; width:32px; height:32px; padding:0; border:0; background:transparent; font-size:0; }
+.context-attachment button.context-remove::before { content:'×'; font:18px/1 Inter,system-ui,sans-serif; }
+#workspace-drawer .context-target-note { margin:16px 0 20px; }
+.pinned-comment { padding:16px 0; border-block:1px solid var(--ob-border); }
+.pinned-comment label { font-weight:600; }
+#workspace-drawer .pinned-comment textarea { min-height:var(--ob-context-input-height); width:100%; }
+.pinned-comment button { width:100%; min-height:32px; margin-top:16px; }
+.context-selection-tools { margin-top:16px; }
+#workspace-sheet-content[data-panel=context] {
+  inset-block:0 auto; margin-block:var(--ob-panel-top) var(--ob-inset);
+  height:calc(100% - var(--ob-panel-top) - var(--ob-inset)); border:0;
+}
+#workspace-sheet-content[data-panel=context] #workspace-drawer {
+  padding:0; scrollbar-gutter:stable; overscroll-behavior:contain;
+}
+.context-panel-flow {
+  box-sizing:border-box; width:calc(min(var(--ob-inspector-width),100vw - 32px) - 32px);
+  margin-inline-start:16px; padding-bottom:16px;
+}

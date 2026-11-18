@@ -259,7 +259,7 @@ export class CanvasController {
     if (name === 'canvas_codegen_cancel') return toolResult(cancelCodegen(this, args));
     if (name === 'canvas_codegen_poll') return toolResult(pollCodegen(this, args));
     const current = await readCanvasSelection(this.session,{includePath:name==='canvas_panel_state'});
-    const state = { pluginVersion:'0.14.2', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
+    const state = { pluginVersion:'0.14.3', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
       project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,autosave:this.persistence?.status(),agents:this.agentStatus(),comments:this.comments?await this.comments.list():[] };
     return name==='canvas_panel_state' ? {content:[],_meta:{panelState:{...state,layerPath:current.layerPath}}} : toolResult(state);
   }
@@ -330,7 +330,7 @@ export class CanvasController {
       }
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.14.2' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.14.3' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }

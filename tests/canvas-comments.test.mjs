@@ -43,3 +43,21 @@ test('a later selection cannot redirect or block a pinned comment before submit'
   const saved=await f.journal.create(f.args);
   assert.deepEqual(saved.nodeIds,['a']);assert.equal(saved.nodes[0].name,'Кнопка');
 });
+
+test('only one panel can reserve delivery, including after reopening the journal', async t => {
+  const { journal, options, args } = await fixture(t);
+  const request = { ...args, prepareDelivery: true };
+  const competing = new CanvasComments(options);
+  const results = await Promise.allSettled([journal.create(request), competing.create(request)]);
+  assert.equal(results.filter(result => result.value?.shouldSend).length, 1);
+  const reopened = new CanvasComments(options);
+  const [pending] = await reopened.list();
+  assert.equal(pending.status, 'uncertain');
+  assert.equal('shouldSend' in pending, false);
+  assert.equal((await reopened.create(request)).shouldSend, false);
+  await journal.update({ commentId: args.requestId, status: 'sent' });
+  const confirmed = await reopened.create(request);
+  assert.equal(confirmed.shouldSend, false);
+  assert.equal(confirmed.status, 'sent');
+  assert.equal((await reopened.list()).length, 1);
+});

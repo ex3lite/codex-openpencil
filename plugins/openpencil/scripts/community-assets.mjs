@@ -30,7 +30,7 @@ const tool = (name, description, properties, required = [], readOnly = false, mo
 export const communityTools = [
   tool('canvas_community_settings','Read or update global resource defaults or project overrides. Autonomous resource selection defaults enabled. License verification defaults to enabled; disabling permits unknown licenses under user responsibility, while retaining known attribution and licenses.',{scope,verifyLicenses:{type:'boolean'},autonomous:{type:'boolean'}}),
   tool('canvas_community_search','Search the global downloaded resource library by default, or scope to project-linked resources. Returns provenance, license, checksums and safe local previews. For external discovery use the host web search and Figma Community URLs; this tool searches local files only.',
-    {scope,query:string,kind:{type:'string',enum:KINDS},limit:{type:'integer',minimum:1,maximum:100},offset:{type:'integer',minimum:0},previews:{type:'boolean'}},[],true),
+    {scope,query:string,kind:{type:'string',enum:KINDS},order:{type:'string',enum:['library']},limit:{type:'integer',minimum:1,maximum:100},offset:{type:'integer',minimum:0},previews:{type:'boolean'}},[],true),
   tool('canvas_community_ingest','Copy an authorized local SVG, image, .op or .fig into the global library and link it to this project with source and retained license. .fig automatically converts and indexes all pages through the verified native converter. No archive extraction or script execution.',
     {...metadata,sourcePath:string,licensePath:string},['sourcePath','kind','sourceUrl','author'],false,true),
   tool('canvas_community_download','Download an authorized public HTTPS asset from its original source into the global library and link it to this project. Keeps source, any known license and original cover. License evidence is required when project license verification is enabled. No login, private URLs or access-control bypass.',
@@ -171,11 +171,14 @@ export class ProjectCommunityDataset {
   }
   async settings(changes = {}) { await this.ensure(); return communitySettings(this.directory,changes); }
   describe(entry) { return {...entry,...originalCommunityIdentity(entry),path:join(this.directory,entry.relativePath),importMode:importMode(entry.format)}; }
-  async search({query='',kind,limit=32,offset=0,previews=true,assetIds,additionalMatches} = {}) {
-    if (typeof query !== 'string' || query.length > 512 || (kind && !KINDS.includes(kind)) || !Number.isInteger(limit) || limit<1 || limit>100 || !Number.isInteger(offset) || offset<0) throw Error('Invalid dataset search parameters.');
+  async search({query='',kind,order,limit=32,offset=0,previews=true,assetIds,additionalMatches} = {}) {
+    if (typeof query !== 'string' || query.length > 512 || (order !== undefined && order !== 'library') || (kind && !KINDS.includes(kind)) || !Number.isInteger(limit) || limit<1 || limit>100 || !Number.isInteger(offset) || offset<0) throw Error('Invalid dataset search parameters.');
     const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
     const matches = (await this.index()).assets.filter(entry => (!assetIds || assetIds.has(entry.id)) && (!kind || entry.kind === kind) && terms.every(term =>
       [entry.name,entry.author,entry.kind,entry.format,...entry.tags,...(additionalMatches?.get(entry.id) || [])].join(' ').toLowerCase().includes(term)));
+    // Rank the complete index before paging so browsing and searching agree.
+    if (order === 'library') matches.sort((a,b) => Number(b.kind === 'ui-kit') - Number(a.kind === 'ui-kit') ||
+      Number(Boolean(b.cover)) - Number(Boolean(a.cover)));
     const assets = [];
     for (const entry of matches.slice(offset,offset+limit)) {
       const result = this.describe(entry);

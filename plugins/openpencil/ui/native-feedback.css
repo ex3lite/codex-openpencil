@@ -119,15 +119,30 @@
 .feedback-dialog[data-kind=missing-target] { height:var(--ob-missing-target-height); }
 .feedback-dialog[data-kind=permission] { height:var(--ob-permission-height); }
 .feedback-dialog::backdrop { background:#090b0f99; }
+.feedback-dialog-body {
+  display:flex; flex-direction:column; align-items:flex-start; flex:1 1 auto; min-height:0; align-self:stretch;
+  overflow:auto; overscroll-behavior:contain; scrollbar-width:thin;
+}
+.feedback-dialog-body > * { flex-shrink:0; }
+.feedback-dialog header, .feedback-dialog-actions { flex:none; }
 .feedback-dialog header { display:flex; align-self:stretch; align-items:flex-start; justify-content:space-between; gap:12px; }
-.feedback-dialog header h2 { margin:0; font-size:20px; min-height:30px; line-height:28px; }
+.feedback-dialog header h2 { margin:0; font-size:20px; min-height:30px; line-height:28px; font-weight:600; letter-spacing:.005em; }
 .feedback-dialog header button.feedback-cross { margin-top:-4px; background:var(--ob-surface); color:var(--ob-ink); padding:0; }
-.feedback-dialog .feedback-badge { margin-top:22px; min-width:min(219.6px,100%); }
+.feedback-dialog .feedback-badge { font-weight:600; letter-spacing:normal; margin-top:22px; min-width:min(219.6px,100%); }
 .feedback-dialog p { margin:24px 0 0; min-height:72px; max-width:100%; }
 .feedback-dialog[data-kind=missing-target] p { margin-top:28px; }
 .feedback-dialog .feedback-error { color:var(--ob-danger); padding:8px 0; overflow-wrap:anywhere; }
 .feedback-dialog-actions { display:grid; width:100%; grid-template-columns:minmax(80px,124fr) minmax(0,288fr); gap:12px; margin-top:auto; padding-top:16px; }
-.feedback-dialog-actions button { min-width:0; }
+.feedback-dialog-actions button { min-width:0; width:100%; }
+@media (max-width:440px), (max-height:360px) {
+  .feedback-dialog { padding:16px; }
+  .feedback-dialog .feedback-badge, .feedback-dialog p, .feedback-dialog[data-kind=missing-target] p { margin-top:12px; }
+  .feedback-dialog p { min-height:0; }
+  .feedback-dialog-actions { padding-top:12px; gap:8px; }
+}
+@media (max-height:210px) {
+  .feedback-dialog-body { flex:none; overflow:visible; }
+}
 @media (prefers-reduced-motion: reduce) {
   #workspace-drawer .feedback-state button, .feedback-dialog button { transition:none; }
 }

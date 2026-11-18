@@ -17,7 +17,7 @@ test('background panel state is app-only and selection is private metadata',asyn
   const result=await controller.call('canvas_panel_state',{});
   assert.equal(result._meta.panelState.selection.nodes[0].name,'Private layer');
   assert.equal(result.structuredContent,undefined);
-  assert.equal(result._meta.panelState.pluginVersion,'0.14.4');
+  assert.equal(result._meta.panelState.pluginVersion,'0.14.5');
   assert.equal(JSON.stringify(result.content).includes('private-node'),false);
   assert.equal(JSON.stringify(result.content).includes('Private layer'),false);
 });

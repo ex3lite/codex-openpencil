@@ -340,15 +340,52 @@ const nativeLibrary = (() => {
     }
     async function load() {
       const current = ++version;
-      const data = await nativeEditor.call('canvas_community_search', {scope, query:input.value || '', limit:50, previews:true});
-      const query = (input.value || '').trim().toLowerCase();
+      const search = {scope, query:input.value || '', limit:12, order:'library', previews:true};
+      const data = await nativeEditor.call('canvas_community_search', {...search, offset:0});
+      const query = search.query.trim().toLowerCase();
       const matches = scope === 'global' ? (await packs).filter(pack =>
         [pack.name, pack.author, pack.id, 'иконки icons'].join(' ').toLowerCase().includes(query)) : [];
       if (current !== version) return;
-      const assets = data.assets.slice().sort((a,b) => Number(b.kind === 'ui-kit') - Number(a.kind === 'ui-kit') || Number(!!b.cover) - Number(!!a.cover));
+      const assets = data.assets;
+      const visibleIds = new Set(assets.map(asset => asset.id));
+      let offset = assets.length;
+      function appendPager(total) {
+        if (offset >= total || !Number.isInteger(total)) return;
+        let pending = false;
+        const more = button('Показать ещё', async () => {
+          if (pending || current !== version) return;
+          pending = true;
+          more.setAttribute('aria-busy', 'true');
+          try {
+            const page = await nativeEditor.call('canvas_community_search', {...search, offset});
+            if (current !== version) return;
+            const moveFocus = more.contains(document.activeElement);
+            more.remove();
+            const next = [];
+            for (const asset of page.assets) {
+              if (visibleIds.has(asset.id)) continue;
+              visibleIds.add(asset.id);
+              next.push(card(asset));
+            }
+            results.append(...next);
+            offset += page.assets.length;
+            if (page.assets.length) appendPager(page.total);
+            if (moveFocus) (next[0]?.querySelector('button') || results).focus();
+          } catch (error) {
+            if (current === version) throw error;
+          } finally {
+            pending = false;
+            more.removeAttribute('aria-busy');
+          }
+        }, 'library-load-more');
+        more.classList.add('library-pager');
+        results.append(more);
+      }
       rowObserver?.disconnect();
       results.replaceChildren(...matches.map(packCard), ...assets.map(card));
+      results.scrollTop = 0;
       if (results.firstElementChild && rowObserver) rowObserver.observe(results.firstElementChild);
+      if (assets.length) appendPager(data.total);
       if (!assets.length && !matches.length) results.append(nativeLibraryState(ui, {kind:'empty', title:'Библиотека',
         heading:input.value ? 'По этому запросу ничего нет' : 'Здесь пока нет ресурсов',
         description:'Попробуйте название системы, автора\nили тип ресурса: UI Kit, icons, dashboard.',

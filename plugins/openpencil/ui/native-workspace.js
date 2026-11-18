@@ -228,7 +228,8 @@ const nativeWorkspace = (() => {
     const cross = button('×',()=>dialog.close(),'feedback-cross');
     closeIcon(cross, 'Закрыть');
     heading.append(caption,cross); dialog.append(heading);
-    if (status) dialog.append(badge(status,'danger'));
+    const body = make('div',null,'feedback-dialog-body');
+    if (status) body.append(badge(status,'danger'));
     const message = make('p',description); message.id='feedback-dialog-description';
     const error = make('small',null,'feedback-error'); error.setAttribute('role','alert'); error.hidden = true;
     const actions = make('div',null,'feedback-dialog-actions');
@@ -240,7 +241,8 @@ const nativeWorkspace = (() => {
       finally { confirm.disabled = false; }
     },'primary');
     actions.append(button('Закрыть',()=>dialog.close()),confirm);
-    dialog.append(message,error,actions);
+    body.append(message,error);
+    dialog.append(body,actions);
     dialog.addEventListener('close',()=>{ if (feedbackDialog === dialog) feedbackDialog = null; dialog.remove(); },{once:true});
     document.body.append(dialog); feedbackDialog = dialog; dialog.showModal(); return dialog;
   }

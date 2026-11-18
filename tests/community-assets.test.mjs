@@ -27,6 +27,21 @@ test('ingest retains bytes, license and provenance; search and repeated ingestio
   assert.equal((await dataset.search({query:'missing'})).total,0);
   assert.equal((await dataset.search({kind:'reference'})).total,0);
 });
+test('library order prioritizes kits across pages in both scopes and preserves index order by default', async t=>{
+  const {root,sourcePath,dataset}=await fixture(t);
+  await dataset.ingest({...metadata,sourcePath});
+  const kit=join(root,'kit.op');
+  await writeFile(kit,JSON.stringify({version:'0.8.5',children:[]}));
+  await dataset.ingest({...metadata,sourcePath:kit,sourceUrl:'https://example.com/kit',kind:'ui-kit',name:'Library kit'});
+  for(const scope of ['global','project']){
+    const first=await dataset.search({scope,order:'library',limit:1});
+    const last=await dataset.search({scope,order:'library',limit:1,offset:1});
+    assert.equal(first.total,2);
+    assert.equal(first.assets[0].name,'Library kit');
+    assert.equal(last.assets[0].name,metadata.name);
+    assert.equal((await dataset.search({scope,limit:1})).assets[0].name,metadata.name);
+  }
+});
 test('symlinks, active SVG and foreign resource references are rejected before indexing',async t=>{
   const {root,sourcePath,dataset}=await fixture(t);
   const link=join(root,'link.svg'); await symlink(sourcePath,link);

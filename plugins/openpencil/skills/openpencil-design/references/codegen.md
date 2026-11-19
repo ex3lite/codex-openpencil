@@ -35,7 +35,7 @@ reminders alone never authorize implementation.
 6. For a panel request, call `canvas_codegen_complete` with its `requestId` and the
    absolute `codePath` of the primary source file after verification. The extension
    must match the requested framework (`.tsx`/`.jsx`, `.vue`, `.svelte`, `.html`,
-   `.dart`, `.swift`, or `.kt`). It must be a regular UTF-8 file at most 2 MiB.
+   `.dart`, `.swift`, or `.kt`). Use a regular UTF-8 file. The limit is 16 MiB for standalone HTML and 2 MiB for other targets. For a large HTML export, read the baseline from `baselineCodePath` in `canvas_codegen_status`.
    The bridge rechecks the design version and request identity. A refusal retains
    the previous preview; do not retry against a different request automatically.
 7. Return links to the runnable project and primary source, launch instructions,

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CanvasController, canvasTools } from '../plugins/openpencil/scripts/canvas-controller.mjs';
@@ -37,6 +37,28 @@ test('Code request fixes page, nodes, framework and version; duplicates never ex
   assert.equal((await controller.call('canvas_codegen_status',{})).structuredContent.requestId,job.requestId);
   assert.ok(job.prompt.includes('Do not modify the design'));
   assert.deepEqual(canvasTools.find(tool=>tool.name==='canvas_codegen_prepare')._meta.ui.visibility,['app']);
+});
+
+test('large standalone HTML stays available in the panel and hands the agent a readable source file', async t => {
+  const f = fixture();
+  const dir = await mkdtemp(join(tmpdir(), 'op-codegen-page-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  f.controller.session.dir = dir;
+  const code = '<main>' + 'a'.repeat(2 * 1024 * 1024) + '</main>';
+  const forward = f.controller.session.forward;
+  f.controller.session.forward = message => message.params.name === 'codegen_export'
+    ? { result: { structuredContent: { code, files: { 'index.html': code } } } } : forward(message);
+  const prepared = await f.controller.call('canvas_codegen_prepare', f.args);
+  assert.equal(prepared.structuredContent.code, code);
+  assert.ok(prepared.content[0].text.length < 3000);
+  const status = (await f.controller.call('canvas_codegen_status', {})).structuredContent;
+  assert.equal(status.code, undefined);
+  assert.equal(status.sourceBytes, Buffer.byteLength(code));
+  assert.equal(await readFile(status.baselineCodePath, 'utf8'), code);
+  await completeCodegen(f.controller, { requestId: status.requestId, codePath: status.baselineCodePath });
+  const update = await f.controller.call('canvas_codegen_poll', { afterRevision: 1 });
+  assert.equal(update.structuredContent.code, code);
+  assert.ok(update.content[0].text.length < 3000);
 });
 
 test('Empty selection exports only active-page roots, and stale targets/snapshots never hand off', async () => {

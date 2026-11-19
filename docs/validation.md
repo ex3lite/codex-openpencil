@@ -187,7 +187,7 @@ messages. An acknowledgement means accepted delivery, not completed code. Missin
 capability preserves the baseline and asks the user to say “继续转代码” in Codex.
 Timeouts and uncertain delivery are not replayed. The model-only status/completion
 tools check request identity, design version, cancellation, source extension,
-UTF-8 and the 2 MiB source limit. Completion returns the primary source to the
+UTF-8 and the source size limit of 16 MiB for HTML and 2 MiB for other targets. Completion returns the primary source to the
 existing preview/cache/copy/download path; other project files stay in the workspace.
 
 Package checks, all 74 plugin regressions and skill validation passed. Rust checks

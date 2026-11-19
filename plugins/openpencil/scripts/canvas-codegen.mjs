@@ -1,14 +1,28 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, readFile, realpath } from 'node:fs/promises';
-import { extname, isAbsolute, relative, sep } from 'node:path';
+import { lstat, readFile, realpath, writeFile } from 'node:fs/promises';
+import { extname, isAbsolute, join, relative, sep } from 'node:path';
 import { readCanvasSelection } from './canvas-selection.mjs';
 import { snapshotMatches } from './document-format.mjs';
 
 export const frameworks = ['react', 'react-tailwind', 'vue', 'svelte', 'html', 'flutter', 'swiftui', 'compose', 'react-native'];
+const SMALL_SOURCE_BYTES = 2 * 1024 * 1024;
+// Standalone HTML carries fonts and editable design data. The daemon transport
+// allows 32 MiB and its HTML result carries the primary source twice.
+const sourceLimit = framework => framework === 'html' ? 16 * 1024 * 1024 : SMALL_SOURCE_BYTES;
 const fail = message => { throw new Error(message); };
 const equalIds = (a, b) => { const sorted = [...b].sort(); return Array.isArray(a) && a.length === b.length && [...a].sort().every((id, i) => id === sorted[i]); };
 const summary = job => job && ({ requestId: job.requestId, uiRequestId: job.uiRequestId, framework: job.framework,
   pageId: job.pageId, nodeIds: job.nodeIds, expectedVersion: job.expectedVersion, status: job.status, revision: job.revision });
+
+export function codegenResult(job, forPanel = false) {
+  if (job?.code && Buffer.byteLength(job.code) > SMALL_SOURCE_BYTES) {
+    const { code, files, ...metadata } = job;
+    metadata.sourceBytes = Buffer.byteLength(code);
+    return { content: [{ type: 'text', text: JSON.stringify(metadata) }],
+      structuredContent: forPanel ? { ...metadata, code } : metadata };
+  }
+  return { content: [{ type: 'text', text: JSON.stringify(job) }], structuredContent: job };
+}
 
 export function codegenSummary(controller) { return summary(controller.codegenJob); }
 
@@ -29,7 +43,9 @@ export async function prepareCodegen(controller, args) {
     params: { name: 'codegen_export', arguments: { framework: args.framework, pageId: selection.pageId, nodeIds: JSON.stringify(nodeIds) } } });
   if (exported.error || exported.result?.isError) fail(exported.error?.message || exported.result?.content?.[0]?.text || 'Code export failed.');
   const output = exported.result.structuredContent || JSON.parse(exported.result.content.find(item => item.type === 'text').text);
-  if (!output.code || typeof output.code !== 'string' || Buffer.byteLength(output.code) > 2 * 1024 * 1024) fail('The runtime returned no source code.');
+  const code = output.files?.['component.tsx'] || output.code;
+  if (!code || typeof code !== 'string') fail('The runtime returned no source code.');
+  if (Buffer.byteLength(code) > sourceLimit(args.framework)) fail('The exported source exceeds the Code panel limit. Select a smaller frame.');
   // Recheck after exporting: a concurrent MCP edit must not acquire an older brief.
   const after = await session.document();
   if (after.version !== live.version) fail('The design changed during code export. No request was sent.');
@@ -42,8 +58,13 @@ export async function prepareCodegen(controller, args) {
     'Use codegen_export as a starting point; preserve text, layout, images and design tokens. Finish a runnable implementation and relevant checks. ' +
     'Read the openpencil-design code-generation reference. Return the primary source to the Code panel with canvas_codegen_complete(requestId, codePath). ' +
     'Do not modify the design or silently follow later selection changes. If the design version changed, stop and explain.';
-  const job = { ...context, uiRequestId: args.uiRequestId, code: output.files?.['component.tsx'] || output.code,
+  const job = { ...context, uiRequestId: args.uiRequestId, code,
     files: output.files, prompt, status: 'prepared', revision: (controller.codegenJob?.revision || 0) + 1 };
+  if (Buffer.byteLength(job.code) > SMALL_SOURCE_BYTES) {
+    job.baselineCodePath = join(session.dir, requestId + '.html');
+    await writeFile(job.baselineCodePath, job.code, { flag: 'wx', mode: 0o600 });
+    delete job.files; // Standalone HTML has one primary file, already in code.
+  }
   controller.codegenJob = job;
   return job;
 }
@@ -60,9 +81,10 @@ export async function completeCodegen(controller, { requestId, codePath }) {
   const extensions = { react: ['.tsx', '.jsx'], 'react-tailwind': ['.tsx', '.jsx'], vue: ['.vue'], svelte: ['.svelte'], html: ['.html'], flutter: ['.dart'], swiftui: ['.swift'], compose: ['.kt'], 'react-native': ['.tsx', '.jsx'] };
   if (!extensions[job.framework].includes(extname(codePath).toLowerCase())) fail('The primary source extension must match the requested framework.');
   const stat = await lstat(codePath);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2 * 1024 * 1024) fail('Generated source must be a regular file of at most 2 MiB.');
+  const limit = sourceLimit(job.framework);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > limit) fail('Generated source must be a regular file within the Code panel size limit.');
   const bytes = await readFile(codePath);
-  if (bytes.length > 2 * 1024 * 1024) fail('Generated source exceeds 2 MiB.');
+  if (bytes.length > limit) fail('Generated source exceeds the Code panel size limit.');
   let code; try { code = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { fail('Generated source must be UTF-8 text.'); }
   if (!code.trim() || code.includes('\u0000')) fail('Generated source must be non-empty UTF-8 text.');
   const live = await controller.session.document();

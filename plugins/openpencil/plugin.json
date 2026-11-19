@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "openpencil",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "description": "OpenBrush — локальные редактируемые макеты в Codex на русском языке.",
   "author": {
     "name": "ZSeven-W",

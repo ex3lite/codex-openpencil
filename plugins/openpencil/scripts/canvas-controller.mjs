@@ -24,7 +24,7 @@ import { CanvasFonts, fontTools } from './canvas-fonts.mjs';
 import { iconPackTools, dispatchIconPackTool } from './icon-packs.mjs';
 import { catalogTools, dispatchCatalogTool } from './community-catalog.mjs';
 import { prepareCanvasBrowser, browserLaunchStatus } from './browser-launch.mjs';
-import { prepareCodegen, completeCodegen, pollCodegen, cancelCodegen, codegenSummary, frameworks } from './canvas-codegen.mjs';
+import { prepareCodegen, completeCodegen, pollCodegen, cancelCodegen, codegenResult, codegenSummary, frameworks } from './canvas-codegen.mjs';
 import { auditDesignSystem, designSystemTools, designSystemOperation } from './design-system.mjs';
 
 export const CANVAS_URI = NATIVE_URI;
@@ -86,7 +86,7 @@ export const canvasTools = [
     inputSchema: { ...schema({ uiRequestId: { type: 'string' }, framework: { type: 'string', enum: frameworks }, pageId: { type: 'string' },
       nodeIds: { type: 'array', items: { type: 'string' } }, docJson: { type: 'string' } }), required: ['uiRequestId', 'framework', 'pageId', 'nodeIds', 'docJson'] },
     annotations: { destructiveHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } },
-  { name: 'canvas_codegen_status', description: 'Read the latest Code panel conversion request, its fixed page/node IDs, design version, baseline source and handoff prompt. Use this before implementing a Code panel request; later selection changes do not change its target.',
+  { name: 'canvas_codegen_status', description: 'Read the latest Code panel conversion request, its fixed page/node IDs, design version, baseline source (baselineCodePath for large HTML), and handoff prompt. Use this before implementing a Code panel request; later selection changes do not change its target.',
     inputSchema: schema({}), annotations: { readOnlyHint: true, openWorldHint: false } },
   { name: 'canvas_codegen_complete', description: 'Return the primary implemented source file to the Code panel preview, copy and download actions. Pass the requestId from canvas_codegen_status and an absolute codePath after implementing and verifying the project. Reads the file; never writes it or changes the design. Rejects superseded requests and changed design versions.',
     inputSchema: { ...schema({ requestId: { type: 'string' }, codePath: { type: 'string' } }), required: ['requestId', 'codePath'] },
@@ -255,13 +255,13 @@ export class CanvasController {
     }
     if (name === 'canvas_save') return toolResult(await this.session.save(args));
     if (name === 'canvas_checkpoint') return toolResult(await this.session.checkpoint());
-    if (name === 'canvas_codegen_prepare') return toolResult(await prepareCodegen(this, args));
-    if (name === 'canvas_codegen_status') return toolResult(this.codegenJob || null);
+    if (name === 'canvas_codegen_prepare') return codegenResult(await prepareCodegen(this, args), true);
+    if (name === 'canvas_codegen_status') return codegenResult(this.codegenJob || null);
     if (name === 'canvas_codegen_complete') return toolResult(await completeCodegen(this, args));
     if (name === 'canvas_codegen_cancel') return toolResult(cancelCodegen(this, args));
-    if (name === 'canvas_codegen_poll') return toolResult(pollCodegen(this, args));
+    if (name === 'canvas_codegen_poll') return codegenResult(pollCodegen(this, args), true);
     const current = await readCanvasSelection(this.session,{includePath:name==='canvas_panel_state'});
-    const state = { pluginVersion:'0.14.5', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
+    const state = { pluginVersion:'0.14.6', filePath: this.session.source, recoveryPath: this.recoveryPath(), version: current.live.version, selection: current.selection, codegen: codegenSummary(this),
       project:projectSummary(this),documentId:this.documentId,canvasId:this.agents?.canvasId,autosave:this.persistence?.status(),agents:this.agentStatus(),comments:this.comments?await this.comments.list():[] };
     return name==='canvas_panel_state' ? {content:[],_meta:{panelState:{...state,layerPath:current.layerPath}}} : toolResult(state);
   }
@@ -332,7 +332,7 @@ export class CanvasController {
       }
       if (!Object.hasOwn(message, 'id')) return null;
       if (message.method === 'initialize') {
-        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.14.5' } };
+        const result = upstream?.result || { protocolVersion: message.params?.protocolVersion || '2025-11-25', serverInfo: { name: 'codex-openpencil', version: '0.14.6' } };
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }

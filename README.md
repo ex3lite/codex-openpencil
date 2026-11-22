@@ -1,4 +1,6 @@
 <p align="center">
+
+[OpenBrush для OpenCode — установка](OPENCODE.md)
   <img src="./plugins/openpencil/assets/icon.png" alt="OpenBrush" width="120" />
 </p>
 

@@ -324,7 +324,10 @@ export class CanvasController {
         try {activity=await this.presence.nativeStart(message.params.name,message.params.arguments||{});} catch { /* Presence cannot block a document operation. */ }
       }
       let upstream;
-      try {upstream = this.session ? await this.session.forward(message) : await forward(message, this.options);}
+      try {
+        if (this.session) upstream = await this.session.forward(message);
+        else if (this.options.client !== 'opencode') upstream = await forward(message, this.options);
+      }
       finally {if(activity)this.presence.finish();}
       if (this.session && message.method === 'tools/call' && !upstream?.error && !upstream?.result?.isError) {
         this.persistence?.changed();
@@ -336,7 +339,19 @@ export class CanvasController {
         result.capabilities = { ...result.capabilities, tools: { listChanged: true }, resources: {} };
         return reply(result);
       }
-      if (message.method === 'tools/list') return reply({ ...upstream?.result, tools: [...(upstream?.result?.tools || []), ...canvasTools] });
+      if (message.method === 'tools/list') {
+        const tools = this.options.client === 'opencode'
+          ? canvasTools.filter(tool => tool.name !== 'open_canvas' && tool.name !== 'canvas_prepare_browser' &&
+              tool._meta?.ui?.visibility?.every(value => value === 'app') !== true).map(tool => tool.name === 'canvas_open_browser'
+              ? { ...tool, description: 'Open the editable local OpenBrush canvas for the current OpenCode project. Return panelUrl to the user. Keep this connection alive while editing.' }
+              : tool)
+          : canvasTools;
+        return reply({ ...upstream?.result, tools: [...(upstream?.result?.tools || []), ...tools] });
+      }
+      if (!upstream && this.options.client === 'opencode') {
+        if (message.method === 'ping') return reply({});
+        return errorReply(message.id, -32601, 'Unknown method.');
+      }
       return upstream;
     } catch (error) {
       if (!Object.hasOwn(message, 'id')) return null;

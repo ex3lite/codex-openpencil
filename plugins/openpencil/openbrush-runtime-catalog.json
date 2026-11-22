@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "release": "runtime-v0.14.7-openbrush",
+  "repository": "ex3lite/codex-openpencil",
+  "forkRevision": "61826f6818760b78117690470cf198809bd47e19",
+  "openPencilRevision": "d155cd08c09cdb79f4c0a2c733dc5f9376765abd",
+  "openPencilVersion": "0.8.5",
+  "platforms": {
+    "darwin-arm64": {
+      "platform": "darwin-arm64",
+      "asset": "openpencil-runtime-darwin-arm64.tar.gz",
+      "bytes": 51493554,
+      "sha256": "e71f9682e8484caaf339902b1c345483e890cc6e5b1446c775c4d237fbbc0b43"
+    }
+  }
+}

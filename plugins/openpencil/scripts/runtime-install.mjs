@@ -68,6 +68,9 @@ export async function installRuntime(options = {}) {
   if (process.platform === 'linux') assertSupportedLibc(platform, process.report.getReport().header.glibcVersionRuntime);
   const catalog = options.catalog ?? JSON.parse(await readFile(catalogPath, 'utf8'));
   const entry = catalog.platforms?.[platform];
+  if (catalog.repository !== undefined && catalog.repository !== 'ex3lite/codex-openpencil') {
+    throw new Error('Unrecognized runtime release repository.');
+  }
   if (catalog.schemaVersion !== 1 || !/^runtime-v[\w.-]+$/.test(catalog.release) ||
       !/^[a-f0-9]{40}$/.test(catalog.openPencilRevision) || !entry ||
       entry.platform !== platform || entry.asset !== `openpencil-runtime-${platform}.tar.gz`) {
@@ -91,7 +94,8 @@ async function install({ state, platform, catalog, entry, fetchImpl = fetchRunti
   const metadata = { source: 'release', release: catalog.release, platform };
   const validateRelease = async path => {
     const manifest = JSON.parse(await readFile(join(path, 'openpencil-runtime.json'), 'utf8'));
-    if (manifest.openPencilRevision !== catalog.openPencilRevision || manifest.openPencilVersion !== catalog.openPencilVersion || manifest.platform !== platform) {
+    if (manifest.openPencilRevision !== catalog.openPencilRevision || manifest.openPencilVersion !== catalog.openPencilVersion || manifest.platform !== platform ||
+        (catalog.forkRevision && ['sourceRevision', 'daemonRevision', 'converterRevision'].some(key => manifest.fork?.[key] !== catalog.forkRevision))) {
       throw new Error('Downloaded or cached runtime does not match the pinned release.');
     }
     await resolveRuntime(path);
@@ -101,7 +105,7 @@ async function install({ state, platform, catalog, entry, fetchImpl = fetchRunti
   const staging = await mkdtemp(join(directory, '.install-'));
   try {
     progress(`Installing OpenPencil ${catalog.openPencilVersion} for ${platform}…`);
-    const url = `https://github.com/ZSeven-W/codex-openpencil/releases/download/${catalog.release}/${entry.asset}`;
+    const url = `https://github.com/${catalog.repository ?? 'ZSeven-W/codex-openpencil'}/releases/download/${catalog.release}/${entry.asset}`;
     const names = await extractArchive(await download(entry, url, fetchImpl, progress), staging);
     const manifest = await validateRelease(staging);
     if (names.some(name => name !== 'openpencil-runtime.json' && !Object.hasOwn(manifest.files, name))) {

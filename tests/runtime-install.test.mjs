@@ -176,3 +176,22 @@ test('a custom plugin runtime leaves older running builds bound to their previou
   await assert.rejects(ensureRuntime(undefined, opts), {code:'ENOENT'});
   assert.equal(await readFile(legacyFile, 'utf8'), original);
 });
+
+test('OpenBrush pins the fork release and restores executable converter permissions', async t => {
+  const state = await temporary(t);
+  const revision = 'b'.repeat(40);
+  const value = fixture((manifest, files) => {
+    manifest.fork = { sourceRevision: revision, daemonRevision: revision, converterRevision: revision };
+    files.set('bin/op', Buffer.from('converter'));
+    manifest.files['bin/op'] = sha256(files.get('bin/op'));
+  });
+  Object.assign(value.catalog, { repository: 'ex3lite/codex-openpencil', forkRevision: revision });
+  const runtime = await installRuntime({ state, catalog: value.catalog, progress() {}, fetchImpl: async url => {
+    assert.equal(url, `https://github.com/ex3lite/codex-openpencil/releases/download/${value.catalog.release}/openpencil-runtime-${platform}.tar.gz`);
+    return new Response(value.archive);
+  } });
+  const { access, constants } = await import('node:fs/promises');
+  await access(join(runtime.root, 'bin/op'), constants.X_OK);
+  value.catalog.forkRevision = 'c'.repeat(40);
+  await assert.rejects(installRuntime({ state, catalog: value.catalog }), /pinned release/);
+});

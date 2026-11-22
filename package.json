@@ -21,6 +21,7 @@
     "mobile-smoke": "node scripts/mobile-smoke.mjs",
     "smoke": "node scripts/smoke.mjs",
     "setup": "node scripts/setup.mjs",
+    "setup:opencode": "node scripts/setup-opencode.mjs",
     "canvas": "node scripts/canvas.mjs",
     "codegen-smoke": "node scripts/codegen-smoke.mjs"
   },

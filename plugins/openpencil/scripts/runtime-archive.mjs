@@ -5,6 +5,9 @@ import { dirname, join } from 'node:path';
 const BLOCK = 512;
 const MAX_BYTES = 768 * 1024 * 1024;
 const string = (header, start, length) => header.subarray(start, start + length).toString('utf8').replace(/\0.*$/s, '');
+function isRuntimeExecutable(name) {
+  return /^bin\/(?:op|op-host-web-server)(?:\.exe)?$/.test(name);
+}
 function safeName(name) {
   if (!name || name.includes('\\') || name.includes(':') || name.startsWith('/') ||
       name.split('/').some(part => !part || part === '.' || part === '..')) {
@@ -51,7 +54,7 @@ export async function extractArchive(compressed, destination) {
   for (const [name, bytes] of files) {
     const path = join(destination, ...name.split('/'));
     await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-    await writeFile(path, bytes, { flag: 'wx', mode: name.startsWith('bin/op-host-web-server') ? 0o755 : 0o644 });
+    await writeFile(path, bytes, { flag: 'wx', mode: isRuntimeExecutable(name) ? 0o755 : 0o644 });
   }
   return [...files.keys()];
 }
@@ -71,7 +74,7 @@ export function packArchive(files) {
       prefix = name.slice(0, slash); leaf = name.slice(slash + 1);
     }
     field(header, 0, 100, leaf); field(header, 345, 155, prefix);
-    field(header, 100, 8, (name.startsWith('bin/op-host-web-server') ? '0000755' : '0000644') + '\0');
+    field(header, 100, 8, (isRuntimeExecutable(name) ? '0000755' : '0000644') + '\0');
     for (const offset of [108, 116]) field(header, offset, 8, '0000000\0');
     field(header, 124, 12, bytes.length.toString(8).padStart(11, '0') + '\0');
     field(header, 136, 12, '00000000000\0');
